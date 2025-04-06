@@ -1,6 +1,6 @@
 import streamlit as st
 from utils import (
-    carregar_dados_google_drive,
+    carregar_dados,
     tela_login,
     tela_dataviz,
     tela_score_churn,
@@ -11,6 +11,7 @@ from utils import (
 
 st.set_page_config(page_title="Fluencypass Churn", layout="wide")
 
+# Autenticação do usuário
 if "autenticado" not in st.session_state:
     st.session_state.autenticado = False
 
@@ -18,11 +19,14 @@ if not st.session_state.autenticado:
     tela_login()
     st.stop()
 
-dfs = carregar_dados_google_drive()
+# Carregamento dos dados após login bem-sucedido
+dfs = carregar_dados()
 
+# Barra lateral com menu de navegação e logo
 st.sidebar.image("fluencypass_logo_converted.png", width=150)
 menu = st.sidebar.radio("Menu", ["Dataviz", "Score de Churn", "POV", "Política de Churn", "Perfis de Churn"])
 
+# Renderização das páginas conforme o menu
 if menu == "Dataviz":
     tela_dataviz(dfs)
 elif menu == "Score de Churn":
