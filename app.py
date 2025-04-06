@@ -1,13 +1,29 @@
 import streamlit as st
-from utils import (
-    autenticar_usuario,
-    carregar_dados_locais,
-    tela_dataviz,
-    tela_churn_score,
-    tela_pov,
-    tela_politica_churn,
-    tela_perfis_churn
-)
+import os
+import sys
+
+# 🔁 Tentativa de import robusto
+try:
+    from utils import (
+        autenticar_usuario,
+        carregar_dados_locais,
+        tela_dataviz,
+        tela_churn_score,
+        tela_pov,
+        tela_politica_churn,
+        tela_perfis_churn
+    )
+except ImportError:
+    sys.path.append(os.path.dirname(__file__))
+    from utils import (
+        autenticar_usuario,
+        carregar_dados_locais,
+        tela_dataviz,
+        tela_churn_score,
+        tela_pov,
+        tela_politica_churn,
+        tela_perfis_churn
+    )
 
 st.set_page_config(page_title="Churn Prediction", layout="wide")
 logo_path = "fluencypass_logo_converted.png"
