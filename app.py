@@ -21,14 +21,20 @@ if not st.session_state.autenticado:
     tela_login()
     st.stop()
 
-# Carregamento dos dados após login bem-sucedido
+# Carregamento dos dados após login
 dfs = carregar_dados_google_drive()
 
-# Barra lateral com menu de navegação e logo
+# Menu lateral e logo
 st.sidebar.image("fluencypass_logo_converted.png", width=150)
-menu = st.sidebar.radio("Menu", ["Dataviz", "Score de Churn", "POV", "Política de Churn", "Perfis de Churn"])
+menu = st.sidebar.radio("Menu", [
+    "Dataviz",
+    "Score de Churn",
+    "POV",
+    "Política de Churn",
+    "Perfis de Churn"
+])
 
-# Renderização das páginas conforme o menu
+# Direcionamento do menu
 if menu == "Dataviz":
     tela_dataviz(dfs)
 elif menu == "Score de Churn":
