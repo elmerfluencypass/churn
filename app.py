@@ -22,7 +22,7 @@ if not st.session_state.autenticado:
     st.stop()
 
 # Carregamento dos dados após login bem-sucedido
-dfs = carregar_dados()
+dfs = carregar_dados_google_drive()
 
 # Barra lateral com menu de navegação e logo
 st.sidebar.image("fluencypass_logo_converted.png", width=150)
