@@ -13,7 +13,7 @@ from utils import (
 
 st.set_page_config(page_title="Fluencypass Churn", layout="wide")
 
-# Autenticação do usuário
+# Autenticação
 if "autenticado" not in st.session_state:
     st.session_state.autenticado = False
 
@@ -21,10 +21,10 @@ if not st.session_state.autenticado:
     tela_login()
     st.stop()
 
-# Carregamento dos dados após login
+# Dados carregados após login
 dfs = carregar_dados_google_drive()
 
-# Menu lateral e logo
+# Barra lateral
 st.sidebar.image("fluencypass_logo_converted.png", width=150)
 menu = st.sidebar.radio("Menu", [
     "Dataviz",
@@ -34,7 +34,7 @@ menu = st.sidebar.radio("Menu", [
     "Perfis de Churn"
 ])
 
-# Direcionamento do menu
+# Navegação
 if menu == "Dataviz":
     tela_dataviz(dfs)
 elif menu == "Score de Churn":
