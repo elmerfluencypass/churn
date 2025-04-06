@@ -1,12 +1,14 @@
 import streamlit as st
 from utils import (
-    carregar_dados,
-    tela_login,
-    tela_dataviz,
-    tela_score_churn,
-    tela_pov,
-    tela_politica_churn,
-    tela_perfis_churn
+carregar_dados_google_drive,
+adicionar_logo,
+barra_progresso_mensagem,
+tela_login,
+tela_dataviz,
+tela_score_churn,
+tela_pov,
+tela_politica_churn,
+tela_perfis_churn
 )
 
 st.set_page_config(page_title="Fluencypass Churn", layout="wide")
