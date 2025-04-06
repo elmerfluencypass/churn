@@ -10,6 +10,7 @@ from utils import (
     tela_politica_churn,
     tela_perfis_churn
 )
+from utils_file_upload import tela_upload_csv
 
 st.set_page_config(page_title="Fluencypass Churn", layout="wide")
 
@@ -23,7 +24,14 @@ if not st.session_state.autenticado:
 dfs = carregar_dados_google_drive()
 
 st.sidebar.image("fluencypass_logo_converted.png", width=150)
-menu = st.sidebar.radio("Menu", ["Dataviz", "Score de Churn", "POV", "Política de Churn", "Perfis de Churn"])
+menu = st.sidebar.radio("Menu", [
+    "Dataviz", 
+    "Score de Churn", 
+    "POV", 
+    "Política de Churn", 
+    "Perfis de Churn",
+    "Upload de CSV"  # ✅ Nova opção adicionada
+])
 
 if menu == "Dataviz":
     tela_dataviz(dfs)
@@ -35,3 +43,5 @@ elif menu == "Política de Churn":
     tela_politica_churn(dfs)
 elif menu == "Perfis de Churn":
     tela_perfis_churn(dfs)
+elif menu == "Upload de CSV":
+    tela_upload_csv()
