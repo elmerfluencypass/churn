@@ -10,9 +10,6 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.metrics import roc_auc_score
-from io import BytesIO
-
-sns.set_theme(style="whitegrid")
 
 
 def autenticar_usuario(usuario, senha):
@@ -21,10 +18,14 @@ def autenticar_usuario(usuario, senha):
 
 @st.cache_data
 def carregar_dados_locais():
-    clientes = pd.read_csv("cadastro_clientes.csv")
-    churn = pd.read_csv("churn_detectado.csv")
-    pagamentos = pd.read_csv("historico_pagamentos.csv")
-    return {"clientes": clientes, "churn": churn, "pagamentos": pagamentos}
+    try:
+        clientes = pd.read_csv("cadastro_clientes.csv")
+        churn = pd.read_csv("churn_detectado.csv")
+        pagamentos = pd.read_csv("historico_pagamentos.csv")
+        return {"clientes": clientes, "churn": churn, "pagamentos": pagamentos}
+    except FileNotFoundError as e:
+        st.error(f"Erro ao carregar os dados: {e}")
+        return None
 
 
 def barra_progresso(msg):
@@ -52,11 +53,9 @@ def tela_dataviz(dfs):
     churn = dfs["churn"].copy()
     pagamentos = dfs["pagamentos"]
 
-    # Mapeando número do mês para nome
     churn["mes_nome"] = churn["mes_calendario_churn"].apply(lambda x: calendar.month_name[int(x)])
     churn = churn[churn["mes_churn"] >= 0]
 
-    # Gráfico de barras de volume por mês
     contagem_churn = churn["mes_nome"].value_counts().rename_axis("Mês").reset_index(name="Churns")
     contagem_churn = ordenar_meses(contagem_churn, "Mês")
 
@@ -67,7 +66,6 @@ def tela_dataviz(dfs):
         ax.text(i.get_width() + 3, i.get_y() + 0.4, f'{int(i.get_width())}', fontsize=9)
     st.pyplot(fig)
 
-    # Matriz de quantidade de alunos
     matriz_qtd = churn.pivot_table(
         index="mes_nome", columns="mes_churn", values="user_id", aggfunc="count", fill_value=0
     )
@@ -78,7 +76,6 @@ def tela_dataviz(dfs):
     st.dataframe(matriz_qtd.style.background_gradient(cmap="Reds", axis=None), use_container_width=True)
     gerar_csv_download(matriz_qtd.reset_index(), "matriz_quantidade_alunos")
 
-    # Receita perdida real baseada em última mensalidade registrada
     ultima_mensalidade = pagamentos.sort_values("data_prevista_pagamento").drop_duplicates("user_id", keep="last")
     receita = churn.merge(ultima_mensalidade[["user_id", "valor_mensalidade"]], on="user_id", how="left")
     receita["mes_nome"] = receita["mes_calendario_churn"].apply(lambda x: calendar.month_name[int(x)])
@@ -104,7 +101,6 @@ def tela_churn_score(dfs):
         clientes = dfs["clientes"].copy()
         churn = dfs["churn"].copy()
 
-        # Preparo da base de treino
         churn["target"] = churn["mes_churn"].apply(lambda x: 1 if x == 1 else 0)
         base_modelo = churn.merge(clientes, on="user_id", how="left")
         base_modelo["idade"] = base_modelo["idade"].fillna(0)
@@ -138,7 +134,6 @@ def tela_churn_score(dfs):
         st.dataframe(ativos[["user_id", "nome", "score_churn"]])
         gerar_csv_download(ativos[["user_id", "nome", "score_churn"]], "score_churn")
 
-        # Agrupando scores por mês de previsão fictício
         previsao_meses = list(calendar.month_name)[1:]
         scores_por_mes = pd.DataFrame({
             "Mês": previsao_meses,
