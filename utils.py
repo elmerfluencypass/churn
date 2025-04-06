@@ -5,6 +5,8 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 import calendar
 import time
+import requests
+from io import BytesIO
 
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
@@ -16,15 +18,28 @@ def autenticar_usuario(usuario, senha):
     return usuario == "fluencypass123" and senha == "fluencypass123"
 
 
+def baixar_csv_do_drive(url):
+    file_id = url.split("/d/")[1].split("/")[0]
+    download_url = f"https://drive.google.com/uc?id={file_id}"
+    response = requests.get(download_url)
+    response.raise_for_status()
+    return pd.read_csv(BytesIO(response.content))
+
+
 @st.cache_data
 def carregar_dados_locais():
     try:
-        clientes = pd.read_csv("cadastro_clientes.csv")
-        churn = pd.read_csv("churn_detectado.csv")
-        pagamentos = pd.read_csv("historico_pagamentos.csv")
+        url_clientes = "https://drive.google.com/file/d/1MLYWW5Axp_gGFXGF_mPZsK4vqTTBKDlT/view?usp=drive_link"
+        url_churn = "https://drive.google.com/file/d/1kkdfrCjTjyzjqYfX7C9vDSdfod5HBYQS/view?usp=drive_link"
+        url_pagamentos = "https://drive.google.com/file/d/1j2RW-ryt4H3iX8nkaw371yBI0_EGA8MY/view?usp=drive_link"
+
+        clientes = baixar_csv_do_drive(url_clientes)
+        churn = baixar_csv_do_drive(url_churn)
+        pagamentos = baixar_csv_do_drive(url_pagamentos)
+
         return {"clientes": clientes, "churn": churn, "pagamentos": pagamentos}
-    except FileNotFoundError as e:
-        st.error(f"Erro ao carregar os dados: {e}")
+    except Exception as e:
+        st.error(f"Erro ao carregar os dados do Google Drive: {e}")
         return None
 
 
