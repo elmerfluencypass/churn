@@ -6,12 +6,11 @@ from io import StringIO
 import base64
 from datetime import datetime
 import calendar
-import vizro.plotly.express as px
+import plotly.express as px_native
 from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
 from lightgbm import LGBMClassifier
 from sklearn.model_selection import GridSearchCV
-import plotly.express as px_native
 
 # URLs públicas do Google Drive
 CSV_URLS = {
@@ -81,8 +80,7 @@ def tela_dataviz(dfs):
         st.warning("Nenhum dado de churn disponível para visualização.")
         return
 
-    # Gráfico degradê verde com Vizro Plotly Express
-    fig = px.bar(
+    fig = px_native.bar(
         x=hist.index,
         y=hist.values,
         labels={"x": "Mês", "y": "Alunos Desistentes"},
@@ -92,19 +90,17 @@ def tela_dataviz(dfs):
     )
     st.plotly_chart(fig, use_container_width=True)
 
-    # Matriz de alunos desistentes por período do plano
     cancelamentos = churn.merge(clientes[["user_id", "plano_duracao_meses"]], on="user_id", how="left")
     cancelamentos["mes_atual_plano"] = cancelamentos["mes_churn"]
     
     matriz = pd.crosstab(cancelamentos["mes_churn"], cancelamentos["mes_atual_plano"])
-    matriz = matriz.loc[:, matriz.columns >= 1]  # remove colunas com números negativos ou 0
+    matriz = matriz.loc[:, matriz.columns >= 1]
 
     st.markdown("### Matriz de Alunos Desistentes por Mês e Período do Plano")
     if not matriz.empty:
         st.dataframe(matriz.style.background_gradient(cmap="Greens"), use_container_width=True)
     else:
         st.warning("Matriz de alunos desistentes está vazia.")
-
 def tela_score_churn(dfs):
     adicionar_logo()
     st.markdown("## :bar_chart: Score de Propensão ao Churn Mensal")
@@ -137,8 +133,6 @@ def tela_score_churn(dfs):
     st.dataframe(base[["nome", "score_churn", "mes_churn_previsto"]])
     csv = base.to_csv(index=False).encode("utf-8")
     st.download_button("Download CSV", csv, "score_churn.csv", "text/csv")
-
-
 def tela_pov(dfs):
     adicionar_logo()
     st.markdown("## :money_with_wings: Prova de Valor")
@@ -157,16 +151,14 @@ def tela_pov(dfs):
     alunos_simulados = alunos * (percentual / 100)
     receita_simulada = receita_mensal * (percentual / 100)
 
-    fig1 = px.bar(x=alunos_simulados.index, y=alunos_simulados.values,
-                  labels={"x": "Mês", "y": "Alunos Recuperados"}, title="Alunos Recuperados por Mês")
-    fig2 = px.bar(x=receita_simulada.index, y=receita_simulada.values,
-                  labels={"x": "Mês", "y": "Receita Recuperada"}, title="Receita Recuperada por Mês (R$)")
+    fig1 = px_native.bar(x=alunos_simulados.index, y=alunos_simulados.values,
+                         labels={"x": "Mês", "y": "Alunos Recuperados"}, title="Alunos Recuperados por Mês")
+    fig2 = px_native.bar(x=receita_simulada.index, y=receita_simulada.values,
+                         labels={"x": "Mês", "y": "Receita Recuperada"}, title="Receita Recuperada por Mês (R$)")
 
     st.plotly_chart(fig1)
     st.plotly_chart(fig2)
     st.metric("Total de Receita Recuperável (R$)", f"R$ {receita_simulada.sum():,.2f}")
-
-
 def tela_politica_churn(dfs):
     adicionar_logo()
     st.markdown("## :dart: Política de Churn")
@@ -179,13 +171,11 @@ def tela_politica_churn(dfs):
     churn["score_churn"] = np.random.rand(len(churn))
 
     media_score = churn.groupby("mes_do_plano")["score_churn"].mean().reset_index()
-    fig = px.bar(media_score, x="mes_do_plano", y="score_churn",
-                 labels={"mes_do_plano": "Mês do Plano", "score_churn": "Score Médio"},
-                 title="Score Médio por Período do Plano (Simulado)",
-                 color="score_churn", color_continuous_scale="RdBu")
+    fig = px_native.bar(media_score, x="mes_do_plano", y="score_churn",
+                        labels={"mes_do_plano": "Mês do Plano", "score_churn": "Score Médio"},
+                        title="Score Médio por Período do Plano (Simulado)",
+                        color="score_churn", color_continuous_scale="RdBu")
     st.plotly_chart(fig)
-
-
 def tela_perfis_churn(dfs):
     adicionar_logo()
     st.markdown("## :busts_in_silhouette: Perfis de Churn por Mês")
@@ -207,7 +197,8 @@ def tela_perfis_churn(dfs):
     kmeans = KMeans(n_clusters=3, random_state=42)
     base["cluster"] = kmeans.fit_predict(X)
 
-    fig = px.scatter(base, x="idade", y="plano_duracao_meses", color="cluster", title="Perfis de Churn Clusterizados")
+    fig = px_native.scatter(base, x="idade", y="plano_duracao_meses", color="cluster",
+                            title="Perfis de Churn Clusterizados")
     st.plotly_chart(fig)
 
     csv = base[["user_id", "nome", "idade", "plano_duracao_meses", "cluster"]].to_csv(index=False).encode("utf-8")
