@@ -6,14 +6,14 @@ from io import StringIO
 import base64
 from datetime import datetime
 import calendar
-import plotly.express as px  # fallback if vizro fails
-import vizro.plotly.express as vzpx
+import vizro.plotly.express as px
+import plotly.express as px_native
 from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
 from lightgbm import LGBMClassifier
 from sklearn.model_selection import GridSearchCV
 
-# URLs públicas do Google Drive
+# URLs públicas dos arquivos CSV
 CSV_URLS = {
     "clientes": "https://drive.google.com/uc?id=1MLYWW5Axp_gGFXGF_mPZsK4vqTTBKDlT",
     "churn": "https://drive.google.com/uc?id=1kkdfrCjTjyzjqYfX7C9vDSdfod5HBYQS",
@@ -25,7 +25,10 @@ def carregar_dados_google_drive():
     dfs = {}
     for nome, url in CSV_URLS.items():
         response = requests.get(url)
-        dfs[nome] = pd.read_csv(StringIO(response.text))
+        if response.status_code == 200:
+            dfs[nome] = pd.read_csv(StringIO(response.text))
+        else:
+            dfs[nome] = pd.DataFrame()
     return dfs
 
 def adicionar_logo():
@@ -56,19 +59,25 @@ def tela_login():
             st.session_state.autenticado = True
         else:
             st.error("Usuário ou senha incorretos.")
+
 def tela_dataviz(dfs):
     adicionar_logo()
     st.markdown("## :bar_chart: Visão Geral de Churn")
 
-    churn = dfs.get("churn")
-    clientes = dfs.get("clientes")
+    churn = dfs.get("churn", pd.DataFrame()).copy()
+    clientes = dfs.get("clientes", pd.DataFrame()).copy()
+
+    if churn.empty or clientes.empty:
+        st.warning("Dados não carregados corretamente.")
+        return
 
     churn["last_invoice_due_date"] = pd.to_datetime(churn["last_invoice_due_date"], errors="coerce")
     churn = churn.dropna(subset=["last_invoice_due_date"])
     churn["mes_churn"] = churn["last_invoice_due_date"].dt.month
 
     hist = churn["mes_churn"].value_counts().sort_index()
-    fig = vzpx.bar(
+
+    fig = px.bar(
         x=hist.index,
         y=hist.values,
         labels={"x": "Mês", "y": "Alunos Desistentes"},
@@ -78,8 +87,13 @@ def tela_dataviz(dfs):
     )
     st.plotly_chart(fig, use_container_width=True)
 
-    cancelamentos = churn.merge(clientes[["user_id", "duracao_plano_meses"]], on="user_id", how="left")
+    # Corrigir o nome da coluna conforme dataset real
+    if "subscription_plan_months" in clientes.columns:
+        clientes = clientes.rename(columns={"subscription_plan_months": "plano_duracao_meses"})
+
+    cancelamentos = churn.merge(clientes[["user_id", "plano_duracao_meses"]], on="user_id", how="left")
     cancelamentos["mes_atual_plano"] = cancelamentos["mes_churn"]
+
     matriz = pd.crosstab(cancelamentos["mes_churn"], cancelamentos["mes_atual_plano"])
     matriz = matriz.loc[:, matriz.columns >= 1]
 
@@ -87,8 +101,7 @@ def tela_dataviz(dfs):
     if not matriz.empty:
         st.dataframe(matriz.style.background_gradient(cmap="Greens"), use_container_width=True)
     else:
-        st.warning("Matriz vazia.")
-
+        st.warning("Matriz de alunos desistentes está vazia.")
 def tela_score_churn(dfs):
     adicionar_logo()
     st.markdown("## :bar_chart: Score de Propensão ao Churn Mensal")
@@ -100,15 +113,19 @@ def tela_score_churn(dfs):
     clientes["data_nascimento"] = pd.to_datetime(clientes["data_nascimento"], errors="coerce")
     clientes["idade"] = datetime.now().year - clientes["data_nascimento"].dt.year
 
+    if "subscription_plan_months" in clientes.columns:
+        clientes = clientes.rename(columns={"subscription_plan_months": "plano_duracao_meses"})
+
     pagamentos["data_pagamento"] = pd.to_datetime(pagamentos["data_pagamento"], errors="coerce")
     ultima = pagamentos.sort_values("data_pagamento").drop_duplicates("user_id", keep="last")
+
     base = clientes.merge(ultima[["user_id", "valor_mensalidade"]], on="user_id", how="left")
     base = base[~base["user_id"].isin(churn["user_id"])]
     base = base.dropna()
 
     features = ["idade", "valor_mensalidade"]
     X = base[features]
-    y = np.random.randint(0, 2, size=len(X))
+    y = np.random.randint(0, 2, size=len(X))  # Simulado — substitua por y real se disponível
 
     model = LGBMClassifier()
     grid = {"n_estimators": [100, 150], "learning_rate": [0.05, 0.1]}
@@ -120,7 +137,7 @@ def tela_score_churn(dfs):
     base["mes_churn_previsto"] = datetime.now().month + 1
 
     st.dataframe(base[["nome", "score_churn", "mes_churn_previsto"]])
-    csv = base.to_csv(index=False).encode("utf-8")
+    csv = base[["user_id", "nome", "score_churn", "mes_churn_previsto"]].to_csv(index=False).encode("utf-8")
     st.download_button("Download CSV", csv, "score_churn.csv", "text/csv")
 
 def tela_pov(dfs):
@@ -142,10 +159,10 @@ def tela_pov(dfs):
     alunos_simulados = alunos * (percentual / 100)
     receita_simulada = receita_mensal * (percentual / 100)
 
-    fig1 = vzpx.bar(x=alunos_simulados.index, y=alunos_simulados.values,
-                    labels={"x": "Mês", "y": "Alunos Recuperados"}, title="Alunos Recuperados por Mês")
-    fig2 = vzpx.bar(x=receita_simulada.index, y=receita_simulada.values,
-                    labels={"x": "Mês", "y": "Receita Recuperada"}, title="Receita Recuperada por Mês (R$)")
+    fig1 = px.bar(x=alunos_simulados.index, y=alunos_simulados.values,
+                  labels={"x": "Mês", "y": "Alunos Recuperados"}, title="Alunos Recuperados por Mês")
+    fig2 = px.bar(x=receita_simulada.index, y=receita_simulada.values,
+                  labels={"x": "Mês", "y": "Receita Recuperada"}, title="Receita Recuperada por Mês (R$)")
 
     st.plotly_chart(fig1)
     st.plotly_chart(fig2)
@@ -159,18 +176,20 @@ def tela_politica_churn(dfs):
     clientes = dfs["clientes"]
     churn["last_invoice_due_date"] = pd.to_datetime(churn["last_invoice_due_date"], errors="coerce")
     churn["mes_churn"] = churn["last_invoice_due_date"].dt.month
-    clientes["duracao_plano_meses"] = clientes.get("duracao_plano_meses", np.nan)
 
-    churn = churn.merge(clientes[["user_id", "duracao_plano_meses"]], on="user_id", how="left")
-    churn["mes_do_plano"] = churn["duracao_plano_meses"] - churn["mes_churn"]
+    if "subscription_plan_months" in clientes.columns:
+        clientes = clientes.rename(columns={"subscription_plan_months": "plano_duracao_meses"})
+
+    churn = churn.merge(clientes[["user_id", "plano_duracao_meses"]], on="user_id", how="left")
+    churn["mes_do_plano"] = churn["plano_duracao_meses"] - churn["mes_churn"]
     churn = churn[churn["mes_do_plano"] >= 0]
     churn["score_churn"] = np.random.rand(len(churn))
 
     media_score = churn.groupby("mes_do_plano")["score_churn"].mean().reset_index()
-    fig = vzpx.bar(media_score, x="mes_do_plano", y="score_churn",
-                   labels={"mes_do_plano": "Mês do Plano", "score_churn": "Score Médio"},
-                   title="Score Médio por Período do Plano (Simulado)",
-                   color="score_churn", color_continuous_scale="RdBu")
+    fig = px.bar(media_score, x="mes_do_plano", y="score_churn",
+                 labels={"mes_do_plano": "Mês do Plano", "score_churn": "Score Médio"},
+                 title="Score Médio por Período do Plano (Simulado)",
+                 color="score_churn", color_continuous_scale="RdBu")
     st.plotly_chart(fig)
 
 def tela_perfis_churn(dfs):
@@ -184,19 +203,22 @@ def tela_perfis_churn(dfs):
     clientes["data_nascimento"] = pd.to_datetime(clientes["data_nascimento"], errors="coerce")
     clientes["idade"] = datetime.now().year - clientes["data_nascimento"].dt.year
 
+    if "subscription_plan_months" in clientes.columns:
+        clientes = clientes.rename(columns={"subscription_plan_months": "plano_duracao_meses"})
+
     base = churn[churn["last_invoice_due_date"].str.contains(f"-{mes_num:02d}-", na=False)]
     base = base.merge(clientes, on="user_id", how="left")
 
-    base_cluster = base[["idade", "duracao_plano_meses"]].dropna()
+    base_cluster = base[["idade", "plano_duracao_meses"]].dropna()
     scaler = StandardScaler()
     X = scaler.fit_transform(base_cluster)
 
     kmeans = KMeans(n_clusters=3, random_state=42)
     base["cluster"] = kmeans.fit_predict(X)
 
-    fig = vzpx.scatter(base, x="idade", y="duracao_plano_meses", color="cluster",
-                       title="Perfis de Churn Clusterizados")
+    fig = px.scatter(base, x="idade", y="plano_duracao_meses", color="cluster",
+                     title="Perfis de Churn Clusterizados")
     st.plotly_chart(fig)
 
-    csv = base[["user_id", "nome", "idade", "duracao_plano_meses", "cluster"]].to_csv(index=False).encode("utf-8")
+    csv = base[["user_id", "nome", "idade", "plano_duracao_meses", "cluster"]].to_csv(index=False).encode("utf-8")
     st.download_button("Download dos Perfis", csv, "perfis_churn.csv", "text/csv")
