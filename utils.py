@@ -8,12 +8,13 @@ from datetime import datetime
 import calendar
 import vizro.plotly.express as px
 import plotly.express as px_native
+
 from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
 from lightgbm import LGBMClassifier
 from sklearn.model_selection import GridSearchCV
 
-# URLs públicas dos arquivos CSV
+# URLs públicas do Google Drive
 CSV_URLS = {
     "clientes": "https://drive.google.com/uc?id=1MLYWW5Axp_gGFXGF_mPZsK4vqTTBKDlT",
     "churn": "https://drive.google.com/uc?id=1kkdfrCjTjyzjqYfX7C9vDSdfod5HBYQS",
@@ -25,10 +26,12 @@ def carregar_dados_google_drive():
     dfs = {}
     for nome, url in CSV_URLS.items():
         response = requests.get(url)
-        if response.status_code == 200:
-            dfs[nome] = pd.read_csv(StringIO(response.text))
-        else:
-            dfs[nome] = pd.DataFrame()
+        df = pd.read_csv(StringIO(response.text))
+        if nome == "clientes" and "subscription_plan_months" in df.columns:
+            df.rename(columns={"subscription_plan_months": "plano_duracao_meses"}, inplace=True)
+        if nome == "churn" and "invoice_date" in df.columns:
+            df.rename(columns={"invoice_date": "last_invoice_due_date"}, inplace=True)
+        dfs[nome] = df
     return dfs
 
 def adicionar_logo():
@@ -64,36 +67,33 @@ def tela_dataviz(dfs):
     adicionar_logo()
     st.markdown("## :bar_chart: Visão Geral de Churn")
 
-    churn = dfs.get("churn", pd.DataFrame()).copy()
-    clientes = dfs.get("clientes", pd.DataFrame()).copy()
-
-    if churn.empty or clientes.empty:
-        st.warning("Dados não carregados corretamente.")
-        return
+    churn = dfs.get("churn")
+    clientes = dfs.get("clientes")
 
     churn["last_invoice_due_date"] = pd.to_datetime(churn["last_invoice_due_date"], errors="coerce")
     churn = churn.dropna(subset=["last_invoice_due_date"])
     churn["mes_churn"] = churn["last_invoice_due_date"].dt.month
 
-    hist = churn["mes_churn"].value_counts().sort_index()
+    hist = churn["mes_churn"].value_counts().sort_index().reset_index()
+    hist.columns = ["mes_churn", "freq"]
+
+    if hist.empty:
+        st.warning("Nenhum dado de churn disponível para visualização.")
+        return
 
     fig = px.bar(
-        x=hist.index,
-        y=hist.values,
-        labels={"x": "Mês", "y": "Alunos Desistentes"},
+        data_frame=hist,
+        x="mes_churn",
+        y="freq",
+        labels={"mes_churn": "Mês", "freq": "Alunos Desistentes"},
         title="Quantidade de Alunos Desistentes por Mês",
-        color=hist.values,
+        color="freq",
         color_continuous_scale="greens"
     )
     st.plotly_chart(fig, use_container_width=True)
 
-    # Corrigir o nome da coluna conforme dataset real
-    if "subscription_plan_months" in clientes.columns:
-        clientes = clientes.rename(columns={"subscription_plan_months": "plano_duracao_meses"})
-
     cancelamentos = churn.merge(clientes[["user_id", "plano_duracao_meses"]], on="user_id", how="left")
     cancelamentos["mes_atual_plano"] = cancelamentos["mes_churn"]
-
     matriz = pd.crosstab(cancelamentos["mes_churn"], cancelamentos["mes_atual_plano"])
     matriz = matriz.loc[:, matriz.columns >= 1]
 
@@ -111,21 +111,17 @@ def tela_score_churn(dfs):
     pagamentos = dfs["pagamentos"]
 
     clientes["data_nascimento"] = pd.to_datetime(clientes["data_nascimento"], errors="coerce")
-    clientes["idade"] = datetime.now().year - clientes["data_nascimento"].dt.year
-
-    if "subscription_plan_months" in clientes.columns:
-        clientes = clientes.rename(columns={"subscription_plan_months": "plano_duracao_meses"})
+    clientes["idade"] = pd.to_datetime("today").year - clientes["data_nascimento"].dt.year
 
     pagamentos["data_pagamento"] = pd.to_datetime(pagamentos["data_pagamento"], errors="coerce")
     ultima = pagamentos.sort_values("data_pagamento").drop_duplicates("user_id", keep="last")
-
     base = clientes.merge(ultima[["user_id", "valor_mensalidade"]], on="user_id", how="left")
     base = base[~base["user_id"].isin(churn["user_id"])]
-    base = base.dropna()
+    base = base.dropna(subset=["idade", "valor_mensalidade"])
 
     features = ["idade", "valor_mensalidade"]
     X = base[features]
-    y = np.random.randint(0, 2, size=len(X))  # Simulado — substitua por y real se disponível
+    y = np.random.randint(0, 2, size=len(X))  # Simulado para fins de demonstração
 
     model = LGBMClassifier()
     grid = {"n_estimators": [100, 150], "learning_rate": [0.05, 0.1]}
@@ -151,7 +147,7 @@ def tela_pov(dfs):
     pagamentos["data_pagamento"] = pd.to_datetime(pagamentos["data_pagamento"], errors="coerce")
     ultima = pagamentos.sort_values("data_pagamento").drop_duplicates("user_id", keep="last")
     receita = churn.merge(ultima[["user_id", "valor_mensalidade"]], on="user_id", how="left")
-    receita["mes"] = pd.to_datetime(receita["last_invoice_due_date"]).dt.strftime("%B")
+    receita["mes"] = pd.to_datetime(receita["last_invoice_due_date"], errors="coerce").dt.strftime("%B")
 
     receita_mensal = receita.groupby("mes")["valor_mensalidade"].sum()
     alunos = receita["mes"].value_counts().sort_index()
@@ -174,11 +170,9 @@ def tela_politica_churn(dfs):
 
     churn = dfs["churn"]
     clientes = dfs["clientes"]
+
     churn["last_invoice_due_date"] = pd.to_datetime(churn["last_invoice_due_date"], errors="coerce")
     churn["mes_churn"] = churn["last_invoice_due_date"].dt.month
-
-    if "subscription_plan_months" in clientes.columns:
-        clientes = clientes.rename(columns={"subscription_plan_months": "plano_duracao_meses"})
 
     churn = churn.merge(clientes[["user_id", "plano_duracao_meses"]], on="user_id", how="left")
     churn["mes_do_plano"] = churn["plano_duracao_meses"] - churn["mes_churn"]
@@ -201,10 +195,7 @@ def tela_perfis_churn(dfs):
     churn = dfs["churn"]
     clientes = dfs["clientes"]
     clientes["data_nascimento"] = pd.to_datetime(clientes["data_nascimento"], errors="coerce")
-    clientes["idade"] = datetime.now().year - clientes["data_nascimento"].dt.year
-
-    if "subscription_plan_months" in clientes.columns:
-        clientes = clientes.rename(columns={"subscription_plan_months": "plano_duracao_meses"})
+    clientes["idade"] = pd.to_datetime("today").year - clientes["data_nascimento"].dt.year
 
     base = churn[churn["last_invoice_due_date"].str.contains(f"-{mes_num:02d}-", na=False)]
     base = base.merge(clientes, on="user_id", how="left")
