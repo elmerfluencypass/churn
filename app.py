@@ -1,7 +1,7 @@
 import streamlit as st
 from utils import (
     autenticar_usuario,
-    carregar_dados_drive,
+    carregar_dados_locais,
     tela_dataviz,
     tela_churn_score,
     tela_pov,
@@ -10,15 +10,16 @@ from utils import (
 
 st.set_page_config(page_title="Churn Prediction", layout="wide")
 
-# Sidebar com logo e menu
-st.sidebar.image("https://i.imgur.com/nCN1oPI.png", width=150)  # Substituir com link CDN do logo ou via assets
+# Logo visível em todas as telas
+logo_path = "fluencypass_logo_converted.png"
+st.sidebar.image(logo_path, width=150)
 menu = st.sidebar.radio("Menu", ["Dataviz", "Churn Score", "POV", "Política de Churn"])
 
 if "autenticado" not in st.session_state:
     st.session_state.autenticado = False
 
 if not st.session_state.autenticado:
-    st.image("https://i.imgur.com/nCN1oPI.png", width=100)
+    st.image(logo_path, width=100)
     st.title("Churn Prediction")
     usuario = st.text_input("Usuário")
     senha = st.text_input("Senha", type="password")
@@ -29,7 +30,9 @@ if not st.session_state.autenticado:
         else:
             st.error("Credenciais inválidas.")
 else:
-    dfs = carregar_dados_drive()
+    dfs = carregar_dados_locais()
+
+    st.image(logo_path, width=100)
 
     if menu == "Dataviz":
         tela_dataviz(dfs)
