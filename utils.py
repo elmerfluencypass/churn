@@ -24,8 +24,11 @@ def carregar_dados():
     dfs = {}
     for nome, url in CSV_URLS.items():
         response = requests.get(url)
-        dfs[nome] = pd.read_csv(StringIO(response.text))
+        df = pd.read_csv(StringIO(response.text))
+        df.columns = df.columns.str.strip().str.lower().str.replace(" ", "_")
+        dfs[nome] = df
     return dfs
+
 
 def adicionar_logo():
     logo_path = "fluencypass_logo_converted.png"
