@@ -21,7 +21,7 @@ CSV_URLS = {
 }
 
 @st.cache_data
-def carregar_dados_google_drive():
+def carregar_dados():
     dfs = {}
     for nome, url in CSV_URLS.items():
         response = requests.get(url)
