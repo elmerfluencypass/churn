@@ -60,12 +60,28 @@ def tela_login():
 def tela_dataviz(dfs):
     adicionar_logo()
     st.markdown("## :bar_chart: Visão Geral de Churn")
-    barra_progresso_mensagem("Carregando gráficos")
 
-    churn = dfs["churn"]
-    churn["mes_churn"] = pd.to_datetime(churn["last_invoice_due_date"], errors="coerce").dt.month
+    if dfs is None or any(df is None or df.empty for df in dfs.values()):
+        st.error("Erro: Um ou mais datasets não foram carregados corretamente.")
+        return
+
+    churn = dfs.get("churn")
+    clientes = dfs.get("clientes")
+
+    if churn is None or clientes is None:
+        st.error("Erro ao carregar os dados de churn ou clientes.")
+        return
+
+    churn["last_invoice_due_date"] = pd.to_datetime(churn["last_invoice_due_date"], errors="coerce")
+    churn = churn.dropna(subset=["last_invoice_due_date"])
+    churn["mes_churn"] = churn["last_invoice_due_date"].dt.month
 
     hist = churn["mes_churn"].value_counts().sort_index()
+    if hist.empty:
+        st.warning("Nenhum dado de churn disponível para visualização.")
+        return
+
+    # Gráfico degradê verde com Vizro Plotly Express
     fig = px.bar(
         x=hist.index,
         y=hist.values,
@@ -74,16 +90,21 @@ def tela_dataviz(dfs):
         color=hist.values,
         color_continuous_scale="greens"
     )
-    st.plotly_chart(fig)
+    st.plotly_chart(fig, use_container_width=True)
 
-    clientes = dfs["clientes"]
+    # Matriz de alunos desistentes por período do plano
     cancelamentos = churn.merge(clientes[["user_id", "plano_duracao_meses"]], on="user_id", how="left")
     cancelamentos["mes_atual_plano"] = cancelamentos["mes_churn"]
-    cancelamentos = cancelamentos[cancelamentos["mes_atual_plano"] > 0]
-
+    
     matriz = pd.crosstab(cancelamentos["mes_churn"], cancelamentos["mes_atual_plano"])
+    matriz = matriz.loc[:, matriz.columns >= 1]  # remove colunas com números negativos ou 0
+
     st.markdown("### Matriz de Alunos Desistentes por Mês e Período do Plano")
-    st.dataframe(matriz.style.background_gradient(cmap="Greens"))
+    if not matriz.empty:
+        st.dataframe(matriz.style.background_gradient(cmap="Greens"), use_container_width=True)
+    else:
+        st.warning("Matriz de alunos desistentes está vazia.")
+
 def tela_score_churn(dfs):
     adicionar_logo()
     st.markdown("## :bar_chart: Score de Propensão ao Churn Mensal")
