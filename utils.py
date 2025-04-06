@@ -3,14 +3,15 @@ import pandas as pd
 import numpy as np
 import requests
 from io import StringIO
+import base64
+from datetime import datetime
+import calendar
 import vizro.plotly.express as px
 from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
 from lightgbm import LGBMClassifier
 from sklearn.model_selection import GridSearchCV
-from sklearn.model_selection import train_test_split
-import base64
-from datetime import datetime
+import plotly.express as px_native
 
 # URLs públicas do Google Drive
 CSV_URLS = {
@@ -20,7 +21,7 @@ CSV_URLS = {
 }
 
 @st.cache_data
-def carregar_dados():
+def carregar_dados_google_drive():
     dfs = {}
     for nome, url in CSV_URLS.items():
         response = requests.get(url)
@@ -31,21 +32,35 @@ def adicionar_logo():
     logo_path = "fluencypass_logo_converted.png"
     with open(logo_path, "rb") as image_file:
         encoded = base64.b64encode(image_file.read()).decode()
-    st.markdown(f"<div style='position:fixed;top:10px;right:10px;'>"
-                f"<img src='data:image/png;base64,{encoded}' width='120'></div>", unsafe_allow_html=True)
+    st.markdown(f"<div style='position:fixed;top:10px;right:10px;z-index:1000;'>"
+                f"<img src='data:image/png;base64,{encoded}' width='130'></div>", unsafe_allow_html=True)
 
 def barra_progresso_mensagem(texto):
     progresso = st.progress(0)
     status = st.empty()
-    for i in range(100):
-        progresso.progress(i + 1)
-        status.text(f"{texto}... {i + 1}%")
+    for i in range(101):
+        progresso.progress(i)
+        status.text(f"{texto}... {i}%")
     progresso.empty()
     status.empty()
+
+def tela_login():
+    adicionar_logo()
+    st.title("Fluencypass")
+    st.header("Login")
+    username = st.text_input("Usuário")
+    password = st.text_input("Senha", type="password")
+
+    if st.button("Entrar"):
+        if username == "fluencypass123" and password == "fluencypass123":
+            st.session_state.autenticado = True
+        else:
+            st.error("Usuário ou senha incorretos.")
 
 def tela_dataviz(dfs):
     adicionar_logo()
     st.markdown("## :bar_chart: Visão Geral de Churn")
+    barra_progresso_mensagem("Carregando gráficos")
 
     churn = dfs["churn"]
     churn["mes_churn"] = pd.to_datetime(churn["last_invoice_due_date"], errors="coerce").dt.month
@@ -64,10 +79,9 @@ def tela_dataviz(dfs):
     clientes = dfs["clientes"]
     cancelamentos = churn.merge(clientes[["user_id", "plano_duracao_meses"]], on="user_id", how="left")
     cancelamentos["mes_atual_plano"] = cancelamentos["mes_churn"]
+    cancelamentos = cancelamentos[cancelamentos["mes_atual_plano"] > 0]
 
     matriz = pd.crosstab(cancelamentos["mes_churn"], cancelamentos["mes_atual_plano"])
-    matriz = matriz.loc[:, matriz.columns >= 1]
-
     st.markdown("### Matriz de Alunos Desistentes por Mês e Período do Plano")
     st.dataframe(matriz.style.background_gradient(cmap="Greens"))
 def tela_score_churn(dfs):
@@ -88,7 +102,7 @@ def tela_score_churn(dfs):
 
     features = ["idade", "valor_mensalidade"]
     X = base[features]
-    y = np.random.randint(0, 2, size=len(X))
+    y = np.random.randint(0, 2, size=len(X))  # substitua por dados reais, se disponíveis
 
     model = LGBMClassifier()
     grid = {"n_estimators": [100, 150], "learning_rate": [0.05, 0.1]}
@@ -102,6 +116,7 @@ def tela_score_churn(dfs):
     st.dataframe(base[["nome", "score_churn", "mes_churn_previsto"]])
     csv = base.to_csv(index=False).encode("utf-8")
     st.download_button("Download CSV", csv, "score_churn.csv", "text/csv")
+
 
 def tela_pov(dfs):
     adicionar_logo()
@@ -130,6 +145,7 @@ def tela_pov(dfs):
     st.plotly_chart(fig2)
     st.metric("Total de Receita Recuperável (R$)", f"R$ {receita_simulada.sum():,.2f}")
 
+
 def tela_politica_churn(dfs):
     adicionar_logo()
     st.markdown("## :dart: Política de Churn")
@@ -138,7 +154,6 @@ def tela_politica_churn(dfs):
     churn = churn.merge(clientes[["user_id", "plano_duracao_meses"]], on="user_id", how="left")
     churn["mes_churn"] = pd.to_datetime(churn["last_invoice_due_date"], errors="coerce").dt.month
     churn["mes_do_plano"] = churn["plano_duracao_meses"] - churn["mes_churn"]
-
     churn = churn[churn["mes_do_plano"] >= 0]
     churn["score_churn"] = np.random.rand(len(churn))
 
@@ -148,6 +163,7 @@ def tela_politica_churn(dfs):
                  title="Score Médio por Período do Plano (Simulado)",
                  color="score_churn", color_continuous_scale="RdBu")
     st.plotly_chart(fig)
+
 
 def tela_perfis_churn(dfs):
     adicionar_logo()
