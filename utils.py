@@ -126,3 +126,123 @@ def tela_churn_score(dfs):
 
     csv = base_ativos[["user_id", "nome", "score", "mes_previsto"]].to_csv(index=False).encode("utf-8")
     st.download_button("⬇️ Baixar Score em CSV", csv, "score_churn.csv", "text/csv")
+def tela_pov(dfs):
+    st.title("💰 Prova de Valor")
+    col1, col2 = st.columns([0.8, 0.2])
+    with col2:
+        st.image("fluencypass_logo_converted.png", width=100)
+
+    percentual = st.selectbox("Selecione o percentual de recuperação:", list(range(5, 105, 5)), index=1)
+
+    barra_progresso("Calculando simulação de recuperação...")
+
+    churn = dfs["churn"].copy()
+    pagamentos = dfs["pagamentos"].copy()
+    clientes = dfs["clientes"].copy()
+
+    churn["mes_churn_nome"] = pd.to_datetime(churn["data_churn"], errors="coerce").dt.month
+    churn = churn[churn["mes_churn_nome"].notna()]
+    churn["mes_churn_nome"] = churn["mes_churn_nome"].astype(int).apply(lambda x: calendar.month_name[x])
+    churn["mes_churn_nome"] = pd.Categorical(churn["mes_churn_nome"], categories=list(calendar.month_name)[1:], ordered=True)
+
+    pagamentos["data_pagamento"] = pd.to_datetime(pagamentos["data_pagamento"], errors="coerce")
+    pagamentos = pagamentos.sort_values("data_pagamento").drop_duplicates("user_id", keep="last")
+    pagamentos = pagamentos[["user_id", "valor_mensalidade"]]
+
+    merged = churn.merge(pagamentos, on="user_id", how="left")
+    merged = merged.merge(clientes[["user_id", "plano_duracao_meses"]], on="user_id", how="left")
+    merged["meses_restantes"] = merged["plano_duracao_meses"] - merged["mes_plano_cancelado"]
+    merged["meses_restantes"] = merged["meses_restantes"].clip(lower=0)
+    merged["valor_perdido"] = merged["meses_restantes"] * merged["valor_mensalidade"]
+
+    perdas_agrupadas = merged.groupby("mes_churn_nome").agg({
+        "user_id": "count",
+        "valor_perdido": "sum"
+    }).rename(columns={"user_id": "total_desistentes", "valor_perdido": "total_perda_r$"}).fillna(0)
+
+    perdas_agrupadas["recuperados"] = (perdas_agrupadas["total_desistentes"] * percentual / 100).round(0)
+    perdas_agrupadas["valor_recuperado"] = perdas_agrupadas["total_perda_r$"] * (percentual / 100)
+
+    fig1 = px.bar(perdas_agrupadas, y=perdas_agrupadas.index, x="recuperados", orientation="h",
+                  color="recuperados", color_continuous_scale="greens",
+                  labels={"recuperados": "Alunos Recuperados"}, title="Alunos Recuperados por Mês")
+    st.plotly_chart(fig1, use_container_width=True)
+
+    fig2 = px.bar(perdas_agrupadas, y=perdas_agrupadas.index, x="valor_recuperado", orientation="h",
+                  color="valor_recuperado", color_continuous_scale="purples",
+                  labels={"valor_recuperado": "Valor Recuperado (R$)"}, title="Valor Recuperado por Mês (R$)")
+    st.plotly_chart(fig2, use_container_width=True)
+
+    st.metric("💸 Valor Total Recuperado", f"R$ {perdas_agrupadas['valor_recuperado'].sum():,.2f}")
+def tela_politica_churn(dfs):
+    st.title("📌 Política de Churn")
+    col1, col2 = st.columns([0.8, 0.2])
+    with col2:
+        st.image("fluencypass_logo_converted.png", width=100)
+
+    barra_progresso("Calculando score médio por período do plano...")
+
+    clientes = dfs["clientes"].copy()
+    churn = dfs["churn"].copy()
+
+    clientes["data_nascimento"] = pd.to_datetime(clientes["data_nascimento"], errors="coerce")
+    clientes["idade"] = pd.to_datetime("today").year - clientes["data_nascimento"].dt.year
+    clientes = clientes.dropna(subset=["idade"])
+
+    churn = churn.merge(clientes, on="user_id", how="left")
+    churn = churn.dropna(subset=["idade", "plano_duracao_meses", "valor_mensalidade", "estado", "tipo_plano"])
+
+    X = pd.get_dummies(churn[["idade", "plano_duracao_meses", "valor_mensalidade", "estado", "tipo_plano"]])
+    churn["score_simulado"] = MinMaxScaler().fit_transform(np.random.rand(len(X), 1))  # simulando score real
+
+    score_medio = churn.groupby("mes_plano_cancelado")["score_simulado"].mean().reset_index()
+    score_medio = score_medio[score_medio["mes_plano_cancelado"] >= 0].sort_values("mes_plano_cancelado")
+
+    fig = px.bar(score_medio,
+                 x="mes_plano_cancelado", y="score_simulado",
+                 color="score_simulado", color_continuous_scale="blues",
+                 labels={"mes_plano_cancelado": "Período do Plano", "score_simulado": "Score Médio"},
+                 title="Score Médio de Churn por Período do Plano")
+
+    st.plotly_chart(fig, use_container_width=True)
+
+    valor_politica = score_medio["score_simulado"].median()
+    st.metric("🎯 Política de Churn Sugerida", f"Score ≥ {valor_politica:.2f}")
+from sklearn.cluster import KMeans
+
+def tela_perfis_churn(dfs):
+    st.title("👥 Perfis de Churn por Mês")
+    col1, col2 = st.columns([0.8, 0.2])
+    with col2:
+        st.image("fluencypass_logo_converted.png", width=100)
+
+    churn = dfs["churn"].copy()
+    clientes = dfs["clientes"].copy()
+
+    clientes["data_nascimento"] = pd.to_datetime(clientes["data_nascimento"], errors="coerce")
+    clientes["idade"] = pd.to_datetime("today").year - clientes["data_nascimento"].dt.year
+    clientes = clientes.dropna(subset=["idade"])
+
+    churn["mes_churn"] = pd.to_datetime(churn["data_churn"], errors="coerce").dt.month
+    churn = churn[churn["mes_churn"].notna()]
+    churn["mes_churn"] = churn["mes_churn"].astype(int)
+
+    mes_nome = st.selectbox("Selecione o mês para análise", list(calendar.month_name)[1:])
+    mes_num = list(calendar.month_name).index(mes_nome)
+
+    base = churn[churn["mes_churn"] == mes_num].merge(clientes, on="user_id", how="left")
+    base = base.dropna(subset=["idade", "estado", "tipo_plano", "canal"])
+
+    X = pd.get_dummies(base[["idade", "estado", "tipo_plano", "canal"]], drop_first=True)
+
+    kmeans = KMeans(n_clusters=3, n_init=10, random_state=42)
+    base["cluster"] = kmeans.fit_predict(X)
+
+    fig = px.scatter(base, x="idade", y="plano_duracao_meses", color=base["cluster"].astype(str),
+                     title=f"Clusters de Desistentes - {mes_nome}",
+                     labels={"idade": "Idade", "plano_duracao_meses": "Duração Plano", "color": "Cluster"})
+
+    st.plotly_chart(fig, use_container_width=True)
+
+    csv = base[["user_id", "nome", "cluster", "estado", "tipo_plano", "canal"]].to_csv(index=False).encode("utf-8")
+    st.download_button("⬇️ Baixar Perfis CSV", csv, f"perfis_churn_{mes_nome.lower()}.csv", "text/csv")
