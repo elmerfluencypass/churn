@@ -45,7 +45,7 @@ def barra_progresso(texto):
     progresso = st.empty()
     for i in range(101):
         progresso.progress(i / 100, text=texto)
-        time.sleep(0.005)
+        time.sleep(0.003)
     progresso.empty()
 
 
@@ -93,7 +93,6 @@ def tela_dataviz(dfs):
     st.dataframe(matriz_qtd.style.background_gradient(cmap="Reds", axis=None), use_container_width=True)
     gerar_csv_download(matriz_qtd.reset_index(), "matriz_quantidade_alunos")
 
-    # Receita perdida = meses restantes * última mensalidade
     ultima_mensalidade = (
         pagamentos.sort_values("data_prevista_pagamento")
         .drop_duplicates("user_id", keep="last")
@@ -115,6 +114,8 @@ def tela_dataviz(dfs):
     st.subheader("💸 Matriz de Receita Perdida Corrigida (R$)")
     st.dataframe(matriz_receita.style.background_gradient(cmap="Oranges"), use_container_width=True)
     gerar_csv_download(matriz_receita.reset_index(), "matriz_receita_perdida_corrigida")
+
+
 def tela_churn_score(dfs):
     st.title("Score de Propensão ao Churn Mensal")
 
@@ -124,16 +125,14 @@ def tela_churn_score(dfs):
         clientes = dfs["clientes"].copy()
         churn = dfs["churn"].copy()
 
-        clientes["user_id"] = clientes["user_id"].astype(str)
+        clientes["data_nascimento"] = pd.to_datetime(clientes["data_nascimento"], errors="coerce")
         churn["user_id"] = churn["user_id"].astype(str)
+        clientes["user_id"] = clientes["user_id"].astype(str)
 
         churn["target"] = churn["mes_churn"].apply(lambda x: 1 if x == 1 else 0)
         base_modelo = churn.merge(clientes, on="user_id", how="left")
-
-        base_modelo["data_nascimento"] = pd.to_datetime(base_modelo["data_nascimento"], errors="coerce")
         base_modelo = base_modelo.dropna(subset=["data_nascimento"])
         base_modelo["idade"] = pd.to_datetime("today").year - base_modelo["data_nascimento"].dt.year
-        idade_media = base_modelo["idade"].mean()
 
         X = base_modelo[["idade", "plano_duracao_meses"]]
         y = base_modelo["target"]
@@ -141,11 +140,8 @@ def tela_churn_score(dfs):
         modelo = RandomForestClassifier(n_estimators=100, random_state=42)
         modelo.fit(X, y)
 
-        clientes["data_nascimento"] = pd.to_datetime(clientes["data_nascimento"], errors="coerce")
-        clientes = clientes.dropna(subset=["data_nascimento"])
-        clientes["idade"] = pd.to_datetime("today").year - clientes["data_nascimento"].dt.year
-
-        ativos = clientes[clientes["ultima_data_pagamento"].notna()].copy()
+        ativos = clientes.dropna(subset=["data_nascimento", "valor_mensalidade"])
+        ativos["idade"] = pd.to_datetime("today").year - ativos["data_nascimento"].dt.year
         ativos["plano_duracao_meses"] = ativos["plano_duracao_meses"].fillna(12)
 
         X_ativos = ativos[["idade", "plano_duracao_meses"]]
@@ -154,22 +150,21 @@ def tela_churn_score(dfs):
         ativos["score_churn"] = ativos["score_churn"].round(3)
 
         score_limite = ativos["score_churn"].median()
-        em_risco = ativos[ativos["score_churn"] > score_limite]
+        em_risco = ativos[ativos["score_churn"] >= score_limite]
 
         st.success(f"{len(em_risco)} alunos com alta propensão ao churn.")
-        receita_total = em_risco["valor_mensalidade"].sum()
-        st.metric("Receita prevista perdida (R$)", f"R$ {receita_total:,.2f}")
+        st.metric("Receita prevista perdida (R$)", f"R$ {em_risco['valor_mensalidade'].sum():,.2f}")
         st.dataframe(em_risco[["user_id", "nome", "idade", "score_churn", "valor_mensalidade"]])
-        gerar_csv_download(em_risco, "alunos_churn_previsto")
+        gerar_csv_download(em_risco, "score_alunos_pagantes")
 
 
 def tela_pov(dfs):
     st.title("Prova de Valor")
 
-    percentual = st.selectbox("Percentual de Recuperação", options=list(range(5, 105, 5)), index=1)
+    percentual = st.selectbox("Percentual de Recuperação", options=list(range(5, 105, 5)), index=19)
 
     if st.button("Backtest"):
-        barra_progresso("Executando simulação de recuperação...")
+        barra_progresso("Simulando recuperação financeira...")
 
         churn = dfs["churn"].copy()
         pagamentos = dfs["pagamentos"].copy()
@@ -190,19 +185,16 @@ def tela_pov(dfs):
 
         meses = list(calendar.month_name)[1:]
         receita_prev = merged.groupby("mes_nome")["receita_total_faltante"].sum().reindex(meses, fill_value=0)
-
         receita_rec = receita_prev * (percentual / 100)
-        df_recup = pd.DataFrame({
-            "Mês": meses,
-            "Receita Recuperada (R$)": receita_rec.values
-        })
+
+        df_recup = pd.DataFrame({"Mês": meses, "Receita Recuperada (R$)": receita_rec.values})
 
         st.subheader("💰 Receita Recuperada por Mês (R$)")
-        fig2, ax2 = plt.subplots(figsize=(10, 6))
-        sns.barplot(data=df_recup, x="Receita Recuperada (R$)", y="Mês", palette="Purples", ax=ax2)
-        for p in ax2.patches:
-            ax2.text(p.get_width() + 1, p.get_y() + 0.4, f'{int(p.get_width())}', fontsize=9)
-        st.pyplot(fig2)
+        fig, ax = plt.subplots(figsize=(10, 6))
+        sns.barplot(data=df_recup, x="Receita Recuperada (R$)", y="Mês", palette="Purples", ax=ax)
+        for p in ax.patches:
+            ax.text(p.get_width() + 1, p.get_y() + 0.4, f'{int(p.get_width())}', fontsize=9)
+        st.pyplot(fig)
 
         st.metric("Total de Receita Recuperável (R$)", f"R$ {df_recup['Receita Recuperada (R$)'].sum():,.2f}")
 
@@ -216,8 +208,16 @@ def tela_politica_churn(dfs):
     matriz = churn.groupby("mes_churn")["score_fake"].mean().reset_index()
     matriz.columns = ["Período do Plano (Mês)", "Score Médio de Churn"]
 
-    fig, ax = plt.subplots(figsize=(10, 5))
-    sns.heatmap(matriz.set_index("Período do Plano (Mês)").T, annot=True, fmt=".2f", cmap="coolwarm", cbar=True, ax=ax)
+    fig, ax = plt.subplots(figsize=(10, 2))
+    sns.heatmap(
+        matriz.set_index("Período do Plano (Mês)").T,
+        annot=True,
+        fmt=".2f",
+        cmap="coolwarm",
+        cbar=True,
+        ax=ax,
+        linewidths=0.3
+    )
     st.subheader("📌 Score Médio por Período de Curso")
     st.pyplot(fig)
 
@@ -251,4 +251,4 @@ def tela_perfis_churn(dfs):
     st.pyplot(fig)
 
     st.dataframe(base)
-    gerar_csv_download(base, "perfis_churn_mes_" + mes_nome.lower())
+    gerar_csv_download(base, f"perfis_churn_{mes_nome.lower()}")
