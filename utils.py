@@ -8,6 +8,7 @@ import requests
 import time
 from io import BytesIO
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.cluster import KMeans
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler
 
@@ -60,37 +61,17 @@ def gerar_csv_download(df, nome):
     st.download_button(f"📥 Baixar {nome}", csv, f"{nome}.csv", "text/csv")
 
 
-def inferir_duracao_plano(tipo):
-    if pd.isna(tipo):
-        return 12
-    tipo = tipo.lower()
-    if "plus" in tipo:
-        return 12
-    elif "online" in tipo:
-        return 6
-    elif "presencial" in tipo:
-        return 18
-    else:
-        return 12
-
-
 def tela_dataviz(dfs):
     st.title("Histórico de Churn")
     barra_progresso("Carregando dados e visualizações...")
 
     churn = dfs["churn"].copy()
     pagamentos = dfs["pagamentos"].copy()
-    clientes = dfs["clientes"].copy()
-
     churn["user_id"] = churn["user_id"].astype(str)
     pagamentos["user_id"] = pagamentos["user_id"].astype(str)
-    clientes["user_id"] = clientes["user_id"].astype(str)
 
-    # Inferir duração do plano com base no tipo
-    clientes["plano_duracao_meses"] = clientes["tipo_plano"].apply(inferir_duracao_plano)
-
-    churn["mes_nome"] = churn["mes_calendario_churn"].apply(lambda x: calendar.month_name[int(x)])
     churn = churn[churn["mes_churn"] >= 0]
+    churn["mes_nome"] = churn["mes_calendario_churn"].apply(lambda x: calendar.month_name[int(x)])
 
     contagem_churn = churn["mes_nome"].value_counts().rename_axis("Mês").reset_index(name="Total")
     contagem_churn = ordenar_meses(contagem_churn, "Mês")
@@ -113,23 +94,20 @@ def tela_dataviz(dfs):
     st.dataframe(matriz_qtd.style.background_gradient(cmap="Reds", axis=None), use_container_width=True)
     gerar_csv_download(matriz_qtd.reset_index(), "matriz_quantidade_alunos")
 
-    # Receita perdida real considerando plano completo
-    merged = churn.merge(clientes[["user_id", "plano_duracao_meses"]], on="user_id", how="left")
+    # Receita perdida = meses restantes * última mensalidade
     ultima_mensalidade = (
         pagamentos.sort_values("data_prevista_pagamento")
         .drop_duplicates("user_id", keep="last")
         .loc[:, ["user_id", "valor_mensalidade"]]
     )
-    merged = merged.merge(ultima_mensalidade, on="user_id", how="left")
-    merged["mes_nome"] = merged["mes_calendario_churn"].apply(lambda x: calendar.month_name[int(x)])
-    merged = merged[merged["mes_churn"] >= 0]
+    merged = churn.merge(ultima_mensalidade, on="user_id", how="left")
 
     merged["meses_restantes"] = merged["plano_duracao_meses"] - merged["mes_churn"]
     merged["meses_restantes"] = merged["meses_restantes"].clip(lower=0)
-    merged["receita_perdida"] = merged["meses_restantes"] * merged["valor_mensalidade"]
+    merged["receita_perdida_calc"] = merged["meses_restantes"] * merged["valor_mensalidade"]
 
     matriz_receita = merged.pivot_table(
-        index="mes_nome", columns="mes_churn", values="receita_perdida", aggfunc="sum", fill_value=0
+        index="mes_nome", columns="mes_churn", values="receita_perdida_calc", aggfunc="sum", fill_value=0
     )
     matriz_receita = matriz_receita.reset_index()
     matriz_receita = ordenar_meses(matriz_receita, "mes_nome").set_index("mes_nome")
@@ -153,14 +131,13 @@ def tela_churn_score(dfs):
         base_modelo = churn.merge(clientes, on="user_id", how="left")
 
         base_modelo["data_nascimento"] = pd.to_datetime(base_modelo["data_nascimento"], errors="coerce")
+        base_modelo = base_modelo[base_modelo["data_nascimento"].notna()]
         base_modelo["idade"] = pd.to_datetime("today").year - base_modelo["data_nascimento"].dt.year
-        idade_media = base_modelo["idade"].dropna().mean()
+        idade_media = base_modelo["idade"].mean()
         base_modelo["idade"] = base_modelo["idade"].fillna(idade_media)
 
         if "plano_duracao_meses" not in base_modelo.columns:
-            base_modelo["plano_duracao_meses"] = base_modelo["tipo_plano"].apply(inferir_duracao_plano)
-        else:
-            base_modelo["plano_duracao_meses"] = base_modelo["plano_duracao_meses"].fillna(12)
+            base_modelo["plano_duracao_meses"] = 12
 
         X = base_modelo[["idade", "plano_duracao_meses"]]
         y = base_modelo["target"]
@@ -169,13 +146,9 @@ def tela_churn_score(dfs):
         modelo.fit(X, y)
 
         clientes["data_nascimento"] = pd.to_datetime(clientes["data_nascimento"], errors="coerce")
+        clientes = clientes[clientes["data_nascimento"].notna()]
         clientes["idade"] = pd.to_datetime("today").year - clientes["data_nascimento"].dt.year
-        clientes["idade"] = clientes["idade"].fillna(idade_media)
-
-        if "plano_duracao_meses" not in clientes.columns:
-            clientes["plano_duracao_meses"] = clientes["tipo_plano"].apply(inferir_duracao_plano)
-        else:
-            clientes["plano_duracao_meses"] = clientes["plano_duracao_meses"].fillna(12)
+        clientes["plano_duracao_meses"] = 12
 
         ativos = clientes[clientes["ultima_data_pagamento"].notna()].copy()
         X_ativos = ativos[["idade", "plano_duracao_meses"]]
@@ -192,19 +165,6 @@ def tela_churn_score(dfs):
         st.dataframe(em_risco[["user_id", "nome", "idade", "score_churn", "valor_mensalidade"]])
         gerar_csv_download(em_risco, "alunos_churn_previsto")
 
-        st.subheader("📈 Score Médio por Mês")
-        meses = list(calendar.month_name)[1:]
-        scores_mes = pd.DataFrame({
-            "Mês": meses,
-            "Score Médio": np.round(np.random.uniform(0.2, 0.8, 12), 2)
-        })
-
-        fig, ax = plt.subplots(figsize=(10, 6))
-        sns.barplot(data=scores_mes, x="Score Médio", y="Mês", ax=ax, palette="coolwarm")
-        for p in ax.patches:
-            ax.text(p.get_width() + 0.01, p.get_y() + 0.4, f'{p.get_width():.2f}', fontsize=9)
-        st.pyplot(fig)
-
 
 def tela_pov(dfs):
     st.title("Prova de Valor")
@@ -215,29 +175,24 @@ def tela_pov(dfs):
         barra_progresso("Executando simulação de recuperação...")
 
         churn = dfs["churn"].copy()
-        clientes = dfs["clientes"].copy()
         pagamentos = dfs["pagamentos"].copy()
 
         churn["user_id"] = churn["user_id"].astype(str)
-        clientes["user_id"] = clientes["user_id"].astype(str)
         pagamentos["user_id"] = pagamentos["user_id"].astype(str)
 
-        clientes["plano_duracao_meses"] = clientes["tipo_plano"].apply(inferir_duracao_plano)
-
-        pagamentos_ultimos = pagamentos.sort_values("data_prevista_pagamento").drop_duplicates("user_id", keep="last")
-        merged = churn.merge(clientes[["user_id", "plano_duracao_meses"]], on="user_id", how="left")
-        merged = merged.merge(pagamentos_ultimos[["user_id", "valor_mensalidade"]], on="user_id", how="left")
+        pagamentos_ultima = pagamentos.sort_values("data_prevista_pagamento").drop_duplicates("user_id", keep="last")
+        merged = churn.merge(pagamentos_ultima[["user_id", "valor_mensalidade"]], on="user_id", how="left")
 
         merged["meses_restantes"] = merged["plano_duracao_meses"] - merged["mes_churn"]
         merged["meses_restantes"] = merged["meses_restantes"].clip(lower=0)
         merged["receita_total_faltante"] = merged["meses_restantes"] * merged["valor_mensalidade"]
 
         meses = list(calendar.month_name)[1:]
-        alunos_previstos = merged.groupby("mes_calendario_churn")["user_id"].count().reindex(range(1, 13), fill_value=0)
-        receita_prevista = merged.groupby("mes_calendario_churn")["receita_total_faltante"].sum().reindex(range(1, 13), fill_value=0)
+        alunos_prev = merged.groupby("mes_calendario_churn")["user_id"].count().reindex(range(1, 13), fill_value=0)
+        receita_prev = merged.groupby("mes_calendario_churn")["receita_total_faltante"].sum().reindex(range(1, 13), fill_value=0)
 
-        alunos_rec = (alunos_previstos * percentual / 100).astype(int)
-        receita_rec = receita_prevista * (percentual / 100)
+        alunos_rec = (alunos_prev * percentual / 100).astype(int)
+        receita_rec = receita_prev * (percentual / 100)
 
         df_recup = pd.DataFrame({
             "Mês": meses,
@@ -247,31 +202,46 @@ def tela_pov(dfs):
 
         st.subheader("🎯 Alunos Recuperados por Mês")
         fig1, ax1 = plt.subplots(figsize=(10, 6))
-        sns.barplot(data=df_recup, x="Alunos Recuperados", y="Mês", ax=ax1, palette="Greens")
+        sns.barplot(data=df_recup, x="Alunos Recuperados", y="Mês", palette="Greens", ax=ax1)
         for p in ax1.patches:
-            ax1.text(p.get_width() + 1, p.get_y() + 0.4, f'{int(p.get_width())}', fontsize=9)
+            ax1.text(p.get_width() + 1, p.get_y() + 0.4, int(p.get_width()), fontsize=9)
         st.pyplot(fig1)
 
         st.subheader("💰 Receita Recuperada por Mês (R$)")
         fig2, ax2 = plt.subplots(figsize=(10, 6))
-        sns.barplot(data=df_recup, x="Receita Recuperada (R$)", y="Mês", ax=ax2, palette="Purples")
+        sns.barplot(data=df_recup, x="Receita Recuperada (R$)", y="Mês", palette="Purples", ax=ax2)
         for p in ax2.patches:
             ax2.text(p.get_width() + 1, p.get_y() + 0.4, f'{int(p.get_width())}', fontsize=9)
         st.pyplot(fig2)
 
-        receita_total = df_recup["Receita Recuperada (R$)"].sum()
-        st.metric("Total de Receita Recuperada Prevista (R$)", f"R$ {receita_total:,.2f}")
+        st.metric("Total de Receita Recuperável (R$)", f"R$ {df_recup['Receita Recuperada (R$)'].sum():,.2f}")
 
 
-def tela_politica_churn(dfs):
-    st.title("Política de Churn")
+def tela_perfis_churn(dfs):
+    st.title("Perfis de Churn por Mês")
 
-    matriz = pd.DataFrame({
-        "Período do Plano (Mês)": list(range(1, 13)),
-        "Score Médio de Churn": np.round(np.linspace(0.3, 0.85, 12), 2)
-    })
+    churn = dfs["churn"].copy()
+    clientes = dfs["clientes"].copy()
+    churn["user_id"] = churn["user_id"].astype(str)
+    clientes["user_id"] = clientes["user_id"].astype(str)
 
-    st.subheader("📌 Score Médio por Período de Curso")
-    fig, ax = plt.subplots(figsize=(10, 5))
-    sns.heatmap(matriz.set_index("Período do Plano (Mês)"), annot=True, fmt=".2f", cmap="coolwarm", cbar=True, ax=ax)
+    meses_opcoes = list(calendar.month_name)[1:]
+    mes_nome = st.selectbox("Selecione o mês para análise", meses_opcoes)
+    mes_num = meses_opcoes.index(mes_nome) + 1
+
+    base = churn[churn["mes_calendario_churn"] == mes_num].merge(clientes, on="user_id", how="left")
+    base["data_nascimento"] = pd.to_datetime(base["data_nascimento"], errors="coerce")
+    base["idade"] = pd.to_datetime("today").year - base["data_nascimento"].dt.year
+    base = base[["user_id", "nome", "idade", "estado", "tipo_plano", "canal"]].dropna()
+
+    base_modelo = pd.get_dummies(base[["idade", "estado", "tipo_plano", "canal"]])
+    modelo_kmeans = KMeans(n_clusters=3, random_state=42, n_init=10)
+    base["cluster"] = modelo_kmeans.fit_predict(base_modelo)
+
+    st.subheader("🔍 Grupos de Alunos Desistentes")
+    fig, ax = plt.subplots(figsize=(10, 6))
+    sns.scatterplot(data=base, x="idade", y="cluster", hue="estado", palette="tab10", ax=ax)
     st.pyplot(fig)
+
+    st.dataframe(base)
+    gerar_csv_download(base, "perfis_churn_mes_" + mes_nome.lower())
