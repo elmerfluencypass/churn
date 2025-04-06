@@ -11,6 +11,7 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler
 
+
 def autenticar_usuario(usuario, senha):
     return usuario == "fluencypass123" and senha == "fluencypass123"
 
@@ -59,6 +60,20 @@ def gerar_csv_download(df, nome):
     st.download_button(f"📥 Baixar {nome}", csv, f"{nome}.csv", "text/csv")
 
 
+def inferir_duracao_plano(tipo):
+    if pd.isna(tipo):
+        return 12
+    tipo = tipo.lower()
+    if "plus" in tipo:
+        return 12
+    elif "online" in tipo:
+        return 6
+    elif "presencial" in tipo:
+        return 18
+    else:
+        return 12
+
+
 def tela_dataviz(dfs):
     st.title("Histórico de Churn")
     barra_progresso("Carregando dados e visualizações...")
@@ -70,6 +85,9 @@ def tela_dataviz(dfs):
     churn["user_id"] = churn["user_id"].astype(str)
     pagamentos["user_id"] = pagamentos["user_id"].astype(str)
     clientes["user_id"] = clientes["user_id"].astype(str)
+
+    # Inferir duração do plano com base no tipo
+    clientes["plano_duracao_meses"] = clientes["tipo_plano"].apply(inferir_duracao_plano)
 
     churn["mes_nome"] = churn["mes_calendario_churn"].apply(lambda x: calendar.month_name[int(x)])
     churn = churn[churn["mes_churn"] >= 0]
@@ -95,7 +113,7 @@ def tela_dataviz(dfs):
     st.dataframe(matriz_qtd.style.background_gradient(cmap="Reds", axis=None), use_container_width=True)
     gerar_csv_download(matriz_qtd.reset_index(), "matriz_quantidade_alunos")
 
-    # Receita perdida baseada em meses restantes do plano
+    # Receita perdida real considerando plano completo
     merged = churn.merge(clientes[["user_id", "plano_duracao_meses"]], on="user_id", how="left")
     ultima_mensalidade = (
         pagamentos.sort_values("data_prevista_pagamento")
@@ -138,7 +156,11 @@ def tela_churn_score(dfs):
         base_modelo["idade"] = pd.to_datetime("today").year - base_modelo["data_nascimento"].dt.year
         idade_media = base_modelo["idade"].dropna().mean()
         base_modelo["idade"] = base_modelo["idade"].fillna(idade_media)
-        base_modelo["plano_duracao_meses"] = base_modelo["plano_duracao_meses"].fillna(12)
+
+        if "plano_duracao_meses" not in base_modelo.columns:
+            base_modelo["plano_duracao_meses"] = base_modelo["tipo_plano"].apply(inferir_duracao_plano)
+        else:
+            base_modelo["plano_duracao_meses"] = base_modelo["plano_duracao_meses"].fillna(12)
 
         X = base_modelo[["idade", "plano_duracao_meses"]]
         y = base_modelo["target"]
@@ -149,7 +171,11 @@ def tela_churn_score(dfs):
         clientes["data_nascimento"] = pd.to_datetime(clientes["data_nascimento"], errors="coerce")
         clientes["idade"] = pd.to_datetime("today").year - clientes["data_nascimento"].dt.year
         clientes["idade"] = clientes["idade"].fillna(idade_media)
-        clientes["plano_duracao_meses"] = 12
+
+        if "plano_duracao_meses" not in clientes.columns:
+            clientes["plano_duracao_meses"] = clientes["tipo_plano"].apply(inferir_duracao_plano)
+        else:
+            clientes["plano_duracao_meses"] = clientes["plano_duracao_meses"].fillna(12)
 
         ativos = clientes[clientes["ultima_data_pagamento"].notna()].copy()
         X_ativos = ativos[["idade", "plano_duracao_meses"]]
@@ -188,15 +214,35 @@ def tela_pov(dfs):
     if st.button("Backtest"):
         barra_progresso("Executando simulação de recuperação...")
 
+        churn = dfs["churn"].copy()
+        clientes = dfs["clientes"].copy()
+        pagamentos = dfs["pagamentos"].copy()
+
+        churn["user_id"] = churn["user_id"].astype(str)
+        clientes["user_id"] = clientes["user_id"].astype(str)
+        pagamentos["user_id"] = pagamentos["user_id"].astype(str)
+
+        clientes["plano_duracao_meses"] = clientes["tipo_plano"].apply(inferir_duracao_plano)
+
+        pagamentos_ultimos = pagamentos.sort_values("data_prevista_pagamento").drop_duplicates("user_id", keep="last")
+        merged = churn.merge(clientes[["user_id", "plano_duracao_meses"]], on="user_id", how="left")
+        merged = merged.merge(pagamentos_ultimos[["user_id", "valor_mensalidade"]], on="user_id", how="left")
+
+        merged["meses_restantes"] = merged["plano_duracao_meses"] - merged["mes_churn"]
+        merged["meses_restantes"] = merged["meses_restantes"].clip(lower=0)
+        merged["receita_total_faltante"] = merged["meses_restantes"] * merged["valor_mensalidade"]
+
         meses = list(calendar.month_name)[1:]
-        alunos_previstos = np.random.randint(80, 200, 12)
-        alunos_recuperados = (alunos_previstos * percentual / 100).astype(int)
-        receita_recuperada = alunos_recuperados * 120
+        alunos_previstos = merged.groupby("mes_calendario_churn")["user_id"].count().reindex(range(1, 13), fill_value=0)
+        receita_prevista = merged.groupby("mes_calendario_churn")["receita_total_faltante"].sum().reindex(range(1, 13), fill_value=0)
+
+        alunos_rec = (alunos_previstos * percentual / 100).astype(int)
+        receita_rec = receita_prevista * (percentual / 100)
 
         df_recup = pd.DataFrame({
             "Mês": meses,
-            "Alunos Recuperados": alunos_recuperados,
-            "Receita Recuperada (R$)": receita_recuperada
+            "Alunos Recuperados": alunos_rec.values,
+            "Receita Recuperada (R$)": receita_rec.values
         })
 
         st.subheader("🎯 Alunos Recuperados por Mês")
