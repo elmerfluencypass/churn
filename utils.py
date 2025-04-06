@@ -8,9 +8,8 @@ import requests
 import time
 from io import BytesIO
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.cluster import KMeans
-from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler
+from sklearn.cluster import KMeans
 
 
 def autenticar_usuario(usuario, senha):
@@ -105,6 +104,7 @@ def tela_dataviz(dfs):
     merged["meses_restantes"] = merged["plano_duracao_meses"] - merged["mes_churn"]
     merged["meses_restantes"] = merged["meses_restantes"].clip(lower=0)
     merged["receita_perdida_calc"] = merged["meses_restantes"] * merged["valor_mensalidade"]
+    merged["mes_nome"] = merged["mes_calendario_churn"].apply(lambda x: calendar.month_name[int(x)])
 
     matriz_receita = merged.pivot_table(
         index="mes_nome", columns="mes_churn", values="receita_perdida_calc", aggfunc="sum", fill_value=0
@@ -131,13 +131,9 @@ def tela_churn_score(dfs):
         base_modelo = churn.merge(clientes, on="user_id", how="left")
 
         base_modelo["data_nascimento"] = pd.to_datetime(base_modelo["data_nascimento"], errors="coerce")
-        base_modelo = base_modelo[base_modelo["data_nascimento"].notna()]
+        base_modelo = base_modelo.dropna(subset=["data_nascimento"])
         base_modelo["idade"] = pd.to_datetime("today").year - base_modelo["data_nascimento"].dt.year
         idade_media = base_modelo["idade"].mean()
-        base_modelo["idade"] = base_modelo["idade"].fillna(idade_media)
-
-        if "plano_duracao_meses" not in base_modelo.columns:
-            base_modelo["plano_duracao_meses"] = 12
 
         X = base_modelo[["idade", "plano_duracao_meses"]]
         y = base_modelo["target"]
@@ -146,11 +142,12 @@ def tela_churn_score(dfs):
         modelo.fit(X, y)
 
         clientes["data_nascimento"] = pd.to_datetime(clientes["data_nascimento"], errors="coerce")
-        clientes = clientes[clientes["data_nascimento"].notna()]
+        clientes = clientes.dropna(subset=["data_nascimento"])
         clientes["idade"] = pd.to_datetime("today").year - clientes["data_nascimento"].dt.year
-        clientes["plano_duracao_meses"] = 12
 
         ativos = clientes[clientes["ultima_data_pagamento"].notna()].copy()
+        ativos["plano_duracao_meses"] = ativos["plano_duracao_meses"].fillna(12)
+
         X_ativos = ativos[["idade", "plano_duracao_meses"]]
         ativos["score_churn"] = modelo.predict_proba(X_ativos)[:, 1]
         ativos["score_churn"] = MinMaxScaler().fit_transform(ativos[["score_churn"]])
@@ -177,35 +174,28 @@ def tela_pov(dfs):
         churn = dfs["churn"].copy()
         pagamentos = dfs["pagamentos"].copy()
 
-        churn["user_id"] = churn["user_id"].astype(str)
         pagamentos["user_id"] = pagamentos["user_id"].astype(str)
+        churn["user_id"] = churn["user_id"].astype(str)
 
-        pagamentos_ultima = pagamentos.sort_values("data_prevista_pagamento").drop_duplicates("user_id", keep="last")
-        merged = churn.merge(pagamentos_ultima[["user_id", "valor_mensalidade"]], on="user_id", how="left")
+        ultima_mensalidade = pagamentos.sort_values("data_prevista_pagamento") \
+                                       .drop_duplicates("user_id", keep="last") \
+                                       [["user_id", "valor_mensalidade"]]
+
+        merged = churn.merge(ultima_mensalidade, on="user_id", how="left")
 
         merged["meses_restantes"] = merged["plano_duracao_meses"] - merged["mes_churn"]
         merged["meses_restantes"] = merged["meses_restantes"].clip(lower=0)
         merged["receita_total_faltante"] = merged["meses_restantes"] * merged["valor_mensalidade"]
+        merged["mes_nome"] = merged["mes_calendario_churn"].apply(lambda x: calendar.month_name[int(x)])
 
         meses = list(calendar.month_name)[1:]
-        alunos_prev = merged.groupby("mes_calendario_churn")["user_id"].count().reindex(range(1, 13), fill_value=0)
-        receita_prev = merged.groupby("mes_calendario_churn")["receita_total_faltante"].sum().reindex(range(1, 13), fill_value=0)
+        receita_prev = merged.groupby("mes_nome")["receita_total_faltante"].sum().reindex(meses, fill_value=0)
 
-        alunos_rec = (alunos_prev * percentual / 100).astype(int)
         receita_rec = receita_prev * (percentual / 100)
-
         df_recup = pd.DataFrame({
             "Mês": meses,
-            "Alunos Recuperados": alunos_rec.values,
             "Receita Recuperada (R$)": receita_rec.values
         })
-
-        st.subheader("🎯 Alunos Recuperados por Mês")
-        fig1, ax1 = plt.subplots(figsize=(10, 6))
-        sns.barplot(data=df_recup, x="Alunos Recuperados", y="Mês", palette="Greens", ax=ax1)
-        for p in ax1.patches:
-            ax1.text(p.get_width() + 1, p.get_y() + 0.4, int(p.get_width()), fontsize=9)
-        st.pyplot(fig1)
 
         st.subheader("💰 Receita Recuperada por Mês (R$)")
         fig2, ax2 = plt.subplots(figsize=(10, 6))
@@ -215,6 +205,21 @@ def tela_pov(dfs):
         st.pyplot(fig2)
 
         st.metric("Total de Receita Recuperável (R$)", f"R$ {df_recup['Receita Recuperada (R$)'].sum():,.2f}")
+
+
+def tela_politica_churn(dfs):
+    st.title("Política de Churn")
+
+    churn = dfs["churn"].copy()
+    churn["score_fake"] = np.random.uniform(0.3, 0.9, len(churn))
+
+    matriz = churn.groupby("mes_churn")["score_fake"].mean().reset_index()
+    matriz.columns = ["Período do Plano (Mês)", "Score Médio de Churn"]
+
+    fig, ax = plt.subplots(figsize=(10, 5))
+    sns.heatmap(matriz.set_index("Período do Plano (Mês)").T, annot=True, fmt=".2f", cmap="coolwarm", cbar=True, ax=ax)
+    st.subheader("📌 Score Médio por Período de Curso")
+    st.pyplot(fig)
 
 
 def tela_perfis_churn(dfs):
@@ -231,7 +236,9 @@ def tela_perfis_churn(dfs):
 
     base = churn[churn["mes_calendario_churn"] == mes_num].merge(clientes, on="user_id", how="left")
     base["data_nascimento"] = pd.to_datetime(base["data_nascimento"], errors="coerce")
+    base = base.dropna(subset=["data_nascimento"])
     base["idade"] = pd.to_datetime("today").year - base["data_nascimento"].dt.year
+
     base = base[["user_id", "nome", "idade", "estado", "tipo_plano", "canal"]].dropna()
 
     base_modelo = pd.get_dummies(base[["idade", "estado", "tipo_plano", "canal"]])
