@@ -1,32 +1,28 @@
 
 import streamlit as st
-from utils import (
+from utils_CORRIGIDO_v2 import (
     autenticar_usuario,
     carregar_dados_locais,
+    tela_dataviz,
     tela_churn_score,
     tela_pov,
     tela_politica_churn,
     tela_perfis_churn
 )
 
-st.set_page_config(layout="wide", page_title="Churn Prediction")
-st.markdown("""<style>
-    .block-container { padding-top: 2rem; }
-    footer {visibility: hidden;}
-    .st-emotion-cache-18ni7ap { padding-top: 1rem; }
-</style>""", unsafe_allow_html=True)
+st.set_page_config(page_title="Churn Prediction", layout="wide")
 
+# Header com logo
 col1, col2 = st.columns([0.1, 0.9])
 with col1:
-    st.image("fluencypass_logo_converted.png", width=100)
+    st.image("fluencypass_logo_converted.png", width=80)
 with col2:
-    st.markdown("# Fluencypass")
+    st.title("Churn Prediction")
 
 if "autenticado" not in st.session_state:
     st.session_state.autenticado = False
 
 if not st.session_state.autenticado:
-    st.title("Churn Prediction")
     usuario = st.text_input("Usuário")
     senha = st.text_input("Senha", type="password")
     if st.button("Login"):
@@ -36,17 +32,23 @@ if not st.session_state.autenticado:
         else:
             st.error("Usuário ou senha incorretos")
 else:
-    menu = st.sidebar.radio("Menu", ["Dataviz", "Churn Score", "POV", "Política de Churn", "Perfis de Churn"])
+    menu = st.sidebar.radio("Menu", [
+        "Dataviz",
+        "Churn Score",
+        "POV",
+        "Política de Churn",
+        "Perfis de Churn"
+    ])
     st.sidebar.image("fluencypass_logo_converted.png", width=100)
 
     if "dados" not in st.session_state:
-        st.session_state.dados = carregar_dados_locais()
+        with st.spinner("Carregando dados..."):
+            st.session_state.dados = carregar_dados_locais()
 
     dfs = st.session_state.dados
 
     if dfs:
         if menu == "Dataviz":
-            from utils import tela_dataviz
             tela_dataviz(dfs)
         elif menu == "Churn Score":
             tela_churn_score(dfs)
