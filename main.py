@@ -1,16 +1,18 @@
 import streamlit as st
-from auth import login
-import dataviz
-import pov
-import churn_score
 
+# ⚠️ Page config deve ser o primeiro comando Streamlit
 st.set_page_config(
     page_title="Fluency Churn Dashboard",
     layout="wide",
     page_icon="📊"
 )
 
-# Login
+from auth import login
+import dataviz
+import pov
+import churn_score
+
+# Login e navegação
 if login():
     st.sidebar.image("logo.png", use_column_width=True)
     st.sidebar.title("Menu")
