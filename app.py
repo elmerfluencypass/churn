@@ -9,7 +9,7 @@ st.set_page_config(page_title="Fluencypass Churn", layout="wide")
 
 # ---- Login Section ----
 def login():
-    logo = Image.open("assets/logo.webp")
+    logo = Image.open("logo.webp")  # ← agora busca o logo na raiz
     st.image(logo, width=150)
     st.title("Login Fluencypass")
     
@@ -41,7 +41,7 @@ def load_data():
 
 # ---- Main Dataviz Screen ----
 def dataviz():
-    logo = Image.open("assets/logo.webp")
+    logo = Image.open("logo.webp")  # ← também na tela principal
     st.image(logo, width=150)
     st.title("📊 Análise de Churn - Fluencypass")
 
