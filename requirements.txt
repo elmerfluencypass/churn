@@ -1,5 +1,6 @@
 streamlit
+pandas
 gdown
 vizro
-pandas
 plotly
+Pillow
