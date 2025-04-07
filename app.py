@@ -1,43 +1,33 @@
 import streamlit as st
-from utils_original import (
-    carregar_dados,
-    adicionar_logo,
-    barra_progresso_mensagem,
-    tela_login,
-    tela_dataviz,
-    tela_score_churn,
-    tela_pov,
-    tela_politica_churn,
-    tela_perfis_churn
-)
+from components.carregamento import carregar_dados
+from components.filtros import filtro_data
+from components.graficos import histogramas, boxplot, grafico_pizza, correlacoes
+from components.matriz_temporal import gerar_matriz_temporal
+from components.padroes import identificar_padroes
 
-st.set_page_config(page_title="Fluencypass Churn", layout="wide")
+st.set_page_config(layout="wide")
+st.title("📉 Painel de Análise de Desistências")
 
-if "autenticado" not in st.session_state:
-    st.session_state.autenticado = False
+# 🔽 Carregamento dos dados combinados
+df = carregar_dados()
 
-if not st.session_state.autenticado:
-    tela_login()
-    st.stop()
+# 🗓️ Filtro por período
+df_filtrado = filtro_data(df)
 
-dfs = carregar_dados()
+# 📊 Análises gráficas
+col1, col2 = st.columns(2)
+with col1:
+    histogramas(df_filtrado, 'idade')
+    boxplot(df_filtrado, 'tempo_uso')
 
-st.sidebar.image("fluencypass_logo_converted.png", width=150)
-menu = st.sidebar.radio("Menu", [
-    "Dataviz",
-    "Score de Churn",
-    "POV",
-    "Política de Churn",
-    "Perfis de Churn"
-])
+with col2:
+    grafico_pizza(df_filtrado, 'sexo')
+    correlacoes(df_filtrado)
 
-if menu == "Dataviz":
-    tela_dataviz(dfs)
-elif menu == "Score de Churn":
-    tela_score_churn(dfs)
-elif menu == "POV":
-    tela_pov(dfs)
-elif menu == "Política de Churn":
-    tela_politica_churn(dfs)
-elif menu == "Perfis de Churn":
-    tela_perfis_churn(dfs)
+# 🔥 Matriz temporal de desistências
+st.divider()
+gerar_matriz_temporal(df_filtrado)
+
+# 🧠 Padrões de comportamento antes da desistência
+st.divider()
+identificar_padroes(df_filtrado)
