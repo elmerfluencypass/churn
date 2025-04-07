@@ -35,7 +35,7 @@ def show_churn_dashboard(data):
     plot_last_objective_bar(merged)
 
     st.subheader("📊 Matriz: Desistência por Mês x Período do Curso")
-    plot_matriz_periodo_mes(pagamentos, churn)
+    plot_matriz_periodo_mes(data["historico_pagamentos"], data["customer_profile_table"])
 
 # 1. Gráfico churn por mês
 def plot_churn_mensal(df):
@@ -80,36 +80,44 @@ def plot_last_objective_bar(df):
     fig = px.bar(objetivos, x="Objetivo", y="Quantidade", title="Objetivos Declarados por Alunos Desistentes")
     st.plotly_chart(fig, use_container_width=True)
 
-# 7. Matriz mês do ano x período do curso (corrigida)
-def plot_matriz_periodo_mes(pagamentos_df, churn_df):
-    # Garantir tipos compatíveis
+# 7. Matriz mês do ano x período do curso (nova lógica)
+def plot_matriz_periodo_mes(pagamentos_df, cadastro_df):
     pagamentos_df["user_id"] = pagamentos_df["user_id"].astype(str)
-    churn_df["user_id"] = churn_df["user_id"].astype(str)
-    pagamentos_df["mes"] = pagamentos_df["mes"].astype(str)
-    churn_df["mes_calendario_churn"] = churn_df["mes_calendario_churn"].astype(str)
+    cadastro_df["user_id"] = cadastro_df["user_id"].astype(str)
 
-    # Merge filtrando apenas alunos desistentes
-    df = pagamentos_df.merge(
-        churn_df[["user_id", "mes_calendario_churn"]],
-        on="user_id",
-        how="inner"
-    )
+    hoje = pd.to_datetime("today").normalize()
+    cadastro_df["ultima_data_pagamento"] = pd.to_datetime(cadastro_df["ultima_data_pagamento"], errors="coerce")
+    cadastro_df["dias_sem_pagar"] = (hoje - cadastro_df["ultima_data_pagamento"]).dt.days
+    cadastro_df["status_atual"] = cadastro_df["status_atual"].str.lower()
 
-    # Criar matriz
+    desistentes = cadastro_df[
+        (cadastro_df["status_atual"] != "concluído") &
+        (cadastro_df["dias_sem_pagar"] > 30)
+    ].copy()
+
+    pagamentos_filtrados = pagamentos_df[pagamentos_df["user_id"].isin(desistentes["user_id"])].copy()
+    pagamentos_filtrados["data_prevista_pagamento"] = pd.to_datetime(pagamentos_filtrados["data_prevista_pagamento"], errors="coerce")
+    pagamentos_filtrados["mes_calendario"] = pagamentos_filtrados["data_prevista_pagamento"].dt.strftime("%B")
+    pagamentos_filtrados["mes"] = pagamentos_filtrados["mes"].astype(str)
+
     matriz = pd.pivot_table(
-        df,
+        pagamentos_filtrados,
         values="user_id",
-        index="mes_calendario_churn",
+        index="mes_calendario",
         columns="mes",
         aggfunc="count",
         fill_value=0
     )
 
+    ordem_meses = ['January', 'February', 'March', 'April', 'May', 'June',
+                   'July', 'August', 'September', 'October', 'November', 'December']
+    matriz = matriz.reindex(ordem_meses)
+
     fig = px.imshow(
         matriz,
         text_auto=True,
         color_continuous_scale="Blues",
-        title="Matriz de Desistência por Mês x Período do Curso",
+        title="Matriz de Desistência por Mês do Ano vs Período do Curso",
         aspect="auto"
     )
     st.plotly_chart(fig, use_container_width=True)
