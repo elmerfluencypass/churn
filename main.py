@@ -1,7 +1,6 @@
 import streamlit as st
 import os
 
-# ⚠️ DEVE SER O PRIMEIRO COMANDO Streamlit
 st.set_page_config(
     page_title="Fluency Churn Dashboard",
     layout="wide",
@@ -13,7 +12,6 @@ import dataviz
 import pov
 import churn_score
 
-# Autenticação
 if login():
     logo_path = "logo.png"
     if os.path.exists(logo_path):
@@ -26,9 +24,7 @@ if login():
 
     if menu_opcao == "DataViz":
         dataviz.render()
-
     elif menu_opcao == "POV":
         pov.render()
-
     elif menu_opcao == "Churn Score":
         churn_score.render()
