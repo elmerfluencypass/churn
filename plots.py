@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-import vizro.plotly.express as px
+import plotly.express as px
 from data_processing import identificar_desistentes, enriquecer_com_idade, churn_por_mes
 
 def show_churn_dashboard(data):
