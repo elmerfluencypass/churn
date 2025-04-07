@@ -47,9 +47,14 @@ def dataviz():
 
     data = load_data()
     cadastro = data["customer_profile_table"]
+
+    # 🔍 Debug: Mostrar colunas da tabela para garantir que student_birthdate existe
+    st.subheader("Debug: Colunas disponíveis na tabela de clientes")
+    st.write(cadastro.columns.tolist())
+
     historico = data["historico_pagamentos"]
 
-    # ✅ Corrigido: Nome correto da coluna de nascimento
+    # Conversão segura e cálculo da idade
     cadastro['student_birthdate'] = pd.to_datetime(cadastro['student_birthdate'], errors='coerce')
     cadastro['idade'] = ((pd.Timestamp.now() - cadastro['student_birthdate']).dt.days // 365).astype('Int64')
 
