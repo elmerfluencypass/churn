@@ -2,6 +2,8 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 from data_processing import identificar_desistentes, enriquecer_com_idade
+from sklearn.preprocessing import StandardScaler
+
 
 def show_churn_dashboard(data):
     clientes = data["customer_profile_table"]
