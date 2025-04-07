@@ -1,4 +1,5 @@
 import pandas as pd
+import streamlit as st
 
 CSV_LINKS = {
     "customer_profile_table": "https://drive.google.com/uc?id=1MLYWW5Axp_gGFXGF_mPZsK4vqTTBKDlT",
@@ -8,7 +9,7 @@ CSV_LINKS = {
     "iugu_invoices": "https://drive.google.com/uc?id=1eNcobHn8QJKduVRcs79LsbzT_2L7hK88"
 }
 
-@st.cache_data
+@st.cache  # Compatível com versões mais antigas e atuais
 def load_csv(name):
     url = CSV_LINKS[name]
     return pd.read_csv(url)
