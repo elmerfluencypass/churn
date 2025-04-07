@@ -1,17 +1,19 @@
 import streamlit as st
 import pandas as pd
-import seaborn as sns
+import numpy as np
 import matplotlib.pyplot as plt
-import plotly.express as px
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import classification_report
-import os
+import seaborn as sns
 import gdown
+from sklearn.metrics import cohen_kappa_score
+from sklearn.preprocessing import LabelEncoder
+import vizro.plotly.express as vpx
 
-# ======================================
-# 🔽 Carregamento de Dados do Google Drive
-# ======================================
+st.set_page_config(layout="wide")
+st.title("📉 Painel de Análise de Desistências")
+
+# ----------------------
+# 🔽 Baixar dados
+# ----------------------
 
 CSV_URLS = {
     "cadastro_clientes": "1MLYWW5Axp_gGFXGF_mPZsK4vqTTBKDlT",
@@ -22,159 +24,115 @@ CSV_URLS = {
 }
 
 def baixar_dados():
+    import os
     os.makedirs("data", exist_ok=True)
-    arquivos = []
+    paths = []
     for nome, file_id in CSV_URLS.items():
         path = f"data/{nome}.csv"
         url = f"https://drive.google.com/uc?id={file_id}"
         if not os.path.exists(path):
             gdown.download(url, path, quiet=False)
-        arquivos.append(path)
-    return arquivos
+        paths.append(path)
+    return paths
+
+# ----------------------
+# 📦 Carregar e processar
+# ----------------------
 
 def carregar_dados():
     arquivos = baixar_dados()
-    dfs = []
+    dfs = {}
+    for path in arquivos:
+        nome = path.split("/")[-1].replace(".csv", "")
+        df = pd.read_csv(path)
+        dfs[nome] = df
+    return dfs
 
-    for f in arquivos:
-        df = pd.read_csv(f, parse_dates=True, dayfirst=True)
-        
-        # Se a tabela for iugu_invoices, vamos usar due_date como referência temporal
-        if "iugu_invoices" in f and "due_date" in df.columns:
-            df["due_date"] = pd.to_datetime(df["due_date"], errors='coerce')
+# ----------------------
+# 🔄 Pré-processamento
+# ----------------------
 
-        dfs.append(df)
+def preparar_dados(dfs):
+    pagamentos = dfs['historico_pagamentos'].copy()
+    cadastro = dfs['cadastro_clientes'].copy()
 
-    df_geral = pd.concat(dfs, ignore_index=True)
-    return df_geral
+    pagamentos['data_real_pagamento'] = pd.to_datetime(pagamentos['data_real_pagamento'], errors='coerce')
+    pagamentos['mes_pagamento'] = pagamentos['data_real_pagamento'].dt.month
+    pagamentos['ano_pagamento'] = pagamentos['data_real_pagamento'].dt.year
 
-# ======================================
-# 📅 Filtro por Data (com base em due_date)
-# ======================================
+    cadastro['data_nascimento'] = pd.to_datetime(cadastro['data_nascimento'], errors='coerce')
+    cadastro['idade'] = ((pd.Timestamp.now() - cadastro['data_nascimento']).dt.days // 365).fillna(0).astype(int)
+    cadastro['faixa_etaria'] = pd.cut(cadastro['idade'],
+        bins=[0, 17, 24, 34, 44, 54, 64, 200],
+        labels=["<18", "18-24", "25-34", "35-44", "45-54", "55-64", "65+"]
+    )
+    
+    return pagamentos, cadastro
 
-def filtro_data(df):
-    if 'due_date' not in df.columns:
-        st.error("Coluna 'due_date' não encontrada nos dados.")
-        return df
+# ----------------------
+# 📗 Vizro: Desistentes por Mês
+# ----------------------
 
-    df_valid = df[df['due_date'].notna()]
-
-    if df_valid.empty:
-        st.warning("Não há datas válidas na coluna 'due_date' para aplicar o filtro.")
-        return df
-
-    min_date = df_valid['due_date'].min()
-    max_date = df_valid['due_date'].max()
-    data_ini, data_fim = st.date_input("Filtrar por data de vencimento:", [min_date, max_date])
-
-    return df[(df['due_date'] >= pd.to_datetime(data_ini)) & (df['due_date'] <= pd.to_datetime(data_fim))]
-
-# ======================================
-# 📊 Gráficos
-# ======================================
-
-def histogramas(df, coluna):
-    fig = px.histogram(df, x=coluna, title=f"Histograma de {coluna}")
+def grafico_desistentes_por_mes(df):
+    df['atraso'] = df['dias_em_atraso'] > 30
+    desistentes = df[df['atraso'] & df['mes_pagamento'].notna()]
+    resumo = desistentes.groupby('mes_pagamento').size().reset_index(name='total')
+    fig = vpx.bar(resumo, x='mes_pagamento', y='total', title="Total de Desistentes por Mês", color_discrete_sequence=['green'])
     st.plotly_chart(fig, use_container_width=True)
 
-def boxplot(df, coluna):
-    fig = px.box(df, y=coluna, title=f"Boxplot de {coluna}")
+# ----------------------
+# 📘 Vizro: Perda Financeira por Período
+# ----------------------
+
+def grafico_perda_financeira(df):
+    df['perda'] = df['valor_mensalidade'] * (12 - df['mes'])  # assumindo plano anual
+    df_filtrado = df[df['dias_em_atraso'] > 30]
+    perdas = df_filtrado.groupby('mes')['perda'].sum().reset_index()
+    fig = vpx.bar(perdas, x='mes', y='perda', title="Desistentes por Período do Plano", color_discrete_sequence=['blue'])
     st.plotly_chart(fig, use_container_width=True)
 
-def grafico_pizza(df, coluna):
-    contagem = df[coluna].value_counts().reset_index()
-    contagem.columns = [coluna, 'total']
-    fig = px.pie(contagem, names=coluna, values='total', title=f"Distribuição de {coluna}")
-    st.plotly_chart(fig, use_container_width=True)
+# ----------------------
+# 🧊 Matriz mês x mês de desistência
+# ----------------------
 
-def correlacoes(df):
-    corr = df.corr(numeric_only=True)
-    fig, ax = plt.subplots(figsize=(10, 8))
-    sns.heatmap(corr, annot=True, cmap='coolwarm', fmt=".2f", ax=ax)
+def matriz_mes_a_mes(df):
+    df['mes_real'] = pd.to_datetime(df['data_real_pagamento'], errors='coerce').dt.month
+    df['mes_curso'] = df['mes']
+    matriz = df[df['dias_em_atraso'] > 30].pivot_table(index='mes_real', columns='mes_curso', values='user_id', aggfunc='count', fill_value=0)
+    st.write("### Matriz Mês-a-Mês de Desistência")
+    fig, ax = plt.subplots(figsize=(12, 6))
+    sns.heatmap(matriz, annot=True, fmt='d', cmap='YlGnBu', linewidths=0.5, ax=ax)
     st.pyplot(fig)
 
-# ======================================
-# 🔥 Matriz Temporal
-# ======================================
+# ----------------------
+# 🧠 Estatística Kappa
+# ----------------------
 
-def gerar_matriz_temporal(df):
-    if 'due_date' not in df.columns:
-        st.warning("Coluna 'due_date' não encontrada.")
-        return
+def estatistica_kappa(cadastro_df):
+    st.subheader("📊 Estatística Kappa por Variáveis Categóricas")
+    resultado = []
 
-    df['ano'] = pd.to_datetime(df['due_date'], errors='coerce').dt.year
-    df['mes'] = pd.to_datetime(df['due_date'], errors='coerce').dt.month
+    variaveis = ['faixa_etaria', 'estado', 'tipo_plano', 'canal_aquisicao']
+    cadastro_df = cadastro_df.dropna(subset=['status_atual'])
 
-    if 'status' in df.columns:
-        matriz = df[df['status'] == 'desistente'].pivot_table(
-            index='ano', columns='mes', values='id_aluno', aggfunc='count', fill_value=0
-        )
-        st.write("### Matriz de Desistências por Mês (com base em due_date)")
-        fig, ax = plt.subplots(figsize=(12, 6))
-        sns.heatmap(matriz, cmap="YlOrRd", annot=True, fmt="d", linewidths=0.5, ax=ax)
-        st.pyplot(fig)
-    else:
-        st.warning("Coluna 'status' não encontrada para gerar a matriz de desistências.")
+    for var in variaveis:
+        if cadastro_df[var].nunique() > 1 and cadastro_df[var].notna().sum() > 0:
+            le1 = LabelEncoder().fit(cadastro_df[var].astype(str))
+            le2 = LabelEncoder().fit(cadastro_df['status_atual'].astype(str))
+            kappa = cohen_kappa_score(le1.transform(cadastro_df[var].astype(str)), le2.transform(cadastro_df['status_atual'].astype(str)))
+            resultado.append((var, round(kappa, 3)))
 
-# ======================================
-# 🧠 Identificação de Padrões
-# ======================================
+    df_result = pd.DataFrame(resultado, columns=['Variável', 'Kappa'])
+    st.dataframe(df_result)
 
-def identificar_padroes(df):
-    if 'status' not in df.columns:
-        st.warning("Coluna 'status' ausente — não é possível identificar padrões de desistência.")
-        return
+# ----------------------
+# 🚀 Executar
+# ----------------------
 
-    df_model = df.copy()
-    df_model['desistencia'] = df_model['status'] == 'desistente'
+dfs = carregar_dados()
+pagamentos_df, cadastro_df = preparar_dados(dfs)
 
-    drop_cols = ['status', 'due_date', 'id_aluno', 'desistencia']
-    X = df_model.drop(columns=[col for col in drop_cols if col in df_model.columns], errors='ignore')
-    y = df_model['desistencia']
-
-    X = pd.get_dummies(X, drop_first=True)
-    if X.empty:
-        st.warning("Dados insuficientes para análise de padrão.")
-        return
-
-    X_train, X_test, y_train, y_test = train_test_split(X, y, stratify=y, random_state=42)
-    clf = RandomForestClassifier(n_estimators=100, random_state=42)
-    clf.fit(X_train, y_train)
-
-    importances = pd.Series(clf.feature_importances_, index=X.columns)
-    top_features = importances.sort_values(ascending=False).head(10)
-
-    st.write("### Principais Variáveis antes da Desistência")
-    st.bar_chart(top_features)
-
-    preds = clf.predict(X_test)
-    st.text("Relatório de Classificação:")
-    st.text(classification_report(y_test, preds))
-
-# ======================================
-# 🚀 Execução Principal
-# ======================================
-
-st.set_page_config(layout="wide")
-st.title("📉 Painel de Análise de Desistências")
-
-df = carregar_dados()
-df_filtrado = filtro_data(df)
-
-col1, col2 = st.columns(2)
-with col1:
-    if 'idade' in df_filtrado.columns:
-        histogramas(df_filtrado, 'idade')
-    if 'tempo_uso' in df_filtrado.columns:
-        boxplot(df_filtrado, 'tempo_uso')
-
-with col2:
-    if 'sexo' in df_filtrado.columns:
-        grafico_pizza(df_filtrado, 'sexo')
-    correlacoes(df_filtrado)
-
-st.divider()
-gerar_matriz_temporal(df_filtrado)
-
-st.divider()
-identificar_padroes(df_filtrado)
+grafico_desistentes_por_mes(pagamentos_df)
+grafico_perda_financeira(pagamentos_df)
+matriz_mes_a_mes(pagamentos_df)
+estatistica_kappa(cadastro_df)
