@@ -48,21 +48,21 @@ def dataviz():
     data = load_data()
     cadastro = data["customer_profile_table"]
 
-    # 🔍 Debug: Mostrar colunas da tabela para garantir que student_birthdate existe
+    # 🔍 Mostrar colunas disponíveis (debug temporário)
     st.subheader("Debug: Colunas disponíveis na tabela de clientes")
     st.write(cadastro.columns.tolist())
 
     historico = data["historico_pagamentos"]
 
-    # Conversão segura e cálculo da idade
-    cadastro['student_birthdate'] = pd.to_datetime(cadastro['student_birthdate'], errors='coerce')
-    cadastro['idade'] = ((pd.Timestamp.now() - cadastro['student_birthdate']).dt.days // 365).astype('Int64')
+    # ✅ Cálculo da idade usando o nome correto da coluna
+    cadastro['data_nascimento'] = pd.to_datetime(cadastro['data_nascimento'], errors='coerce')
+    cadastro['idade'] = ((pd.Timestamp.now() - cadastro['data_nascimento']).dt.days // 365).astype('Int64')
 
-    cadastro['ultima data pagamento'] = pd.to_datetime(cadastro['ultima data pagamento'], errors='coerce')
+    cadastro['ultima_data_pagamento'] = pd.to_datetime(cadastro['ultima_data_pagamento'], errors='coerce')
     hoje = datetime.today()
-    cadastro['desistente'] = cadastro['ultima data pagamento'] < (hoje - timedelta(days=30))
+    cadastro['desistente'] = cadastro['ultima_data_pagamento'] < (hoje - timedelta(days=30))
     desistentes = cadastro[cadastro['desistente'] == True].copy()
-    desistentes['mes_desistencia'] = desistentes['ultima data pagamento'].dt.strftime('%B')
+    desistentes['mes_desistencia'] = desistentes['ultima_data_pagamento'].dt.strftime('%B')
 
     # -- 1. Distribuição da Idade
     st.subheader("Distribuição da Idade dos Alunos")
@@ -97,12 +97,12 @@ def dataviz():
 
     # -- 4. Matriz Mês x Duração Plano
     st.subheader("Matriz de Desistência por Mês e Duração do Plano")
-    desistentes['mes'] = desistentes['ultima data pagamento'].dt.month
+    desistentes['mes'] = desistentes['ultima_data_pagamento'].dt.month
     matriz = pd.pivot_table(
         data=desistentes,
         index='mes',
         columns='plano duracao meses',
-        values='user id',
+        values='user_id',
         aggfunc='count',
         fill_value=0
     )
@@ -115,12 +115,12 @@ def dataviz():
 
     # -- 5. Bolhas: Sexo por Mês
     st.subheader("Distribuição de Desistência por Sexo")
-    sexo_mes = desistentes.groupby(['mes_desistencia', 'sexo'])['user id'].count().reset_index()
+    sexo_mes = desistentes.groupby(['mes_desistencia', 'sexo'])['user_id'].count().reset_index()
     fig_sexo = px.scatter(
         sexo_mes,
         x='mes_desistencia',
         y='sexo',
-        size='user id',
+        size='user_id',
         color='sexo',
         title="Desistência por Sexo",
         size_max=40
@@ -129,12 +129,12 @@ def dataviz():
 
     # -- 6. Bolhas: Cidade
     st.subheader("Desistentes por Cidade")
-    cidade_mes = desistentes.groupby(['mes_desistencia', 'cidade'])['user id'].count().reset_index()
+    cidade_mes = desistentes.groupby(['mes_desistencia', 'cidade'])['user_id'].count().reset_index()
     fig_cidade = px.scatter(
         cidade_mes,
         x='mes_desistencia',
         y='cidade',
-        size='user id',
+        size='user_id',
         color='cidade',
         title="Desistência por Cidade",
         size_max=40
