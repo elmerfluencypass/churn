@@ -6,19 +6,19 @@ from plots import show_churn_dashboard
 st.set_page_config(page_title="Churn Analysis", layout="wide")
 
 def main():
-    if "authenticated" not in st.session_state:
-        st.session_state.authenticated = False
+    # Controle de login
+    if not login():
+        return
 
-    if not st.session_state.authenticated:
-        st.session_state.authenticated = login()
-        st.rerun()  # Corrigido aqui
-    else:
-        st.image("logo.webp", width=150)
-        menu = st.sidebar.selectbox("Menu", ["Dataviz"])
+    # Logo da Fluencypass no topo
+    st.image("logo.webp", width=150)
 
-        if menu == "Dataviz":
-            data = load_all_data()
-            show_churn_dashboard(data)
+    # Menu lateral
+    menu = st.sidebar.selectbox("Menu", ["Dataviz"])
+
+    if menu == "Dataviz":
+        data = load_all_data()
+        show_churn_dashboard(data)
 
 if __name__ == "__main__":
     main()
