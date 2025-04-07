@@ -3,7 +3,7 @@ import pandas as pd
 import gdown
 from datetime import datetime, timedelta
 from PIL import Image
-import vizro.plotting as vz
+import plotly.express as px
 
 st.set_page_config(page_title="Fluencypass Churn", layout="wide")
 
@@ -49,29 +49,29 @@ def dataviz():
     cadastro = data["customer_profile_table"]
     historico = data["historico_pagamentos"]
 
-    # Conversão e cálculo da idade
     cadastro['student_birthday'] = pd.to_datetime(cadastro['student_birthday'], errors='coerce')
     cadastro['idade'] = ((pd.Timestamp.now() - cadastro['student_birthday']).dt.days // 365).astype('Int64')
 
-    # Conversão de datas e cálculo de desistentes
     cadastro['ultima data pagamento'] = pd.to_datetime(cadastro['ultima data pagamento'], errors='coerce')
     hoje = datetime.today()
     cadastro['desistente'] = cadastro['ultima data pagamento'] < (hoje - timedelta(days=30))
-    desistentes = cadastro[cadastro['desistente'] == True]
+    desistentes = cadastro[cadastro['desistente'] == True].copy()
     desistentes['mes_desistencia'] = desistentes['ultima data pagamento'].dt.strftime('%B')
 
     # -- 1. Distribuição da Idade
     st.subheader("Distribuição da Idade dos Alunos")
-    vz.histogram(data=cadastro, x='idade', title="Distribuição da Idade dos Alunos").show()
+    fig_idade = px.histogram(cadastro, x='idade', nbins=20, title="Distribuição da Idade dos Alunos")
+    st.plotly_chart(fig_idade, use_container_width=True)
 
     # -- 2. Quantidade de Desistentes por Mês (Verde)
     st.subheader("Quantidade de Desistentes por Mês")
-    vz.histogram(
-        data=desistentes,
+    fig_desist = px.histogram(
+        desistentes,
         x='mes_desistencia',
-        title="Quantidade de Desistentes por Mês",
-        color_discrete_sequence=["#e0f2f1", "#66bb6a"]
-    ).show()
+        color_discrete_sequence=px.colors.sequential.Greens,
+        title="Quantidade de Desistentes por Mês"
+    )
+    st.plotly_chart(fig_desist, use_container_width=True)
 
     # -- 3. Mensalidades Não Pagas por Mês (Azul)
     st.subheader("Mensalidades Não Pagas por Mês")
@@ -80,12 +80,14 @@ def dataviz():
     inadimplentes = historico[historico['status pagamento'] == "Em aberto"]
     inadimplentes_grouped = inadimplentes.groupby('mes_pagamento')['valor mensalidade'].sum().reset_index()
 
-    vz.histogram(
-        data=inadimplentes_grouped,
-        x='mes_pagamento', y='valor mensalidade',
+    fig_inadimplencia = px.bar(
+        inadimplentes_grouped,
+        x='mes_pagamento',
+        y='valor mensalidade',
         title="Mensalidades Não Pagas por Mês (R$)",
-        color_discrete_sequence=["#e3f2fd", "#2196f3"]
-    ).show()
+        color_discrete_sequence=px.colors.sequential.Blues
+    )
+    st.plotly_chart(fig_inadimplencia, use_container_width=True)
 
     # -- 4. Matriz Mês x Duração Plano
     st.subheader("Matriz de Desistência por Mês e Duração do Plano")
@@ -98,25 +100,40 @@ def dataviz():
         aggfunc='count',
         fill_value=0
     )
-    vz.heatmap(data=matriz, title="Matriz de Desistência por Mês e Duração do Plano").show()
+    fig_matriz = px.imshow(
+        matriz,
+        labels=dict(x="Duração do Plano (meses)", y="Mês", color="Desistentes"),
+        color_continuous_scale=px.colors.sequential.Reds
+    )
+    st.plotly_chart(fig_matriz, use_container_width=True)
 
     # -- 5. Bolhas: Sexo por Mês
     st.subheader("Distribuição de Desistência por Sexo")
     sexo_mes = desistentes.groupby(['mes_desistencia', 'sexo'])['user id'].count().reset_index()
-    vz.scatter(
-        data=sexo_mes,
-        x='mes_desistencia', y='sexo', size='user id',
-        title="Desistência por Sexo"
-    ).show()
+    fig_sexo = px.scatter(
+        sexo_mes,
+        x='mes_desistencia',
+        y='sexo',
+        size='user id',
+        color='sexo',
+        title="Desistência por Sexo",
+        size_max=40
+    )
+    st.plotly_chart(fig_sexo, use_container_width=True)
 
     # -- 6. Bolhas: Cidade
     st.subheader("Desistentes por Cidade")
     cidade_mes = desistentes.groupby(['mes_desistencia', 'cidade'])['user id'].count().reset_index()
-    vz.scatter(
-        data=cidade_mes,
-        x='mes_desistencia', y='cidade', size='user id',
-        title="Desistência por Cidade"
-    ).show()
+    fig_cidade = px.scatter(
+        cidade_mes,
+        x='mes_desistencia',
+        y='cidade',
+        size='user id',
+        color='cidade',
+        title="Desistência por Cidade",
+        size_max=40
+    )
+    st.plotly_chart(fig_cidade, use_container_width=True)
 
 # ---- App Body ----
 if 'logged_in' not in st.session_state:
