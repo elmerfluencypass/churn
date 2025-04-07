@@ -11,9 +11,9 @@ def main():
 
     if not st.session_state.authenticated:
         st.session_state.authenticated = login()
-        st.experimental_rerun()
+        st.rerun()  # Corrigido aqui
     else:
-        st.image("logo.webp", width=150)  # Logo no diretório raiz
+        st.image("logo.webp", width=150)
         menu = st.sidebar.selectbox("Menu", ["Dataviz"])
 
         if menu == "Dataviz":
