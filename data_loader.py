@@ -21,10 +21,14 @@ def load_all_data():
     df_cadastro = data["customer_profile_table"].copy()
     df_pagamentos = data["historico_pagamentos"].copy()
 
-    # Conversão robusta da data de nascimento
-    dn = pd.to_datetime(df_cadastro["data_nascimento"], errors="coerce")
-    df_cadastro["data_nascimento"] = dn.apply(lambda x: x.tz_localize(None) if pd.notnull(x) and x.tzinfo else x)
+    # --- Conversão robusta da data_nascimento (sem timezone) ---
+    data_nascimento = pd.to_datetime(df_cadastro["data_nascimento"], errors="coerce")
+    data_nascimento = data_nascimento.apply(
+        lambda x: x.tz_localize(None) if pd.notnull(x) and hasattr(x, 'tz_localize') and x.tzinfo else x
+    )
+    df_cadastro["data_nascimento"] = pd.to_datetime(data_nascimento)
 
+    # Conversão de outras datas
     df_cadastro["ultima_data_pagamento"] = pd.to_datetime(df_cadastro["ultima_data_pagamento"], errors="coerce")
 
     # Cálculo da idade
@@ -53,7 +57,7 @@ def load_all_data():
     colunas_existentes = [col for col in colunas_finais if col in df_unificado.columns]
     df_modelagem = df_unificado[colunas_existentes].copy()
 
-    # Adiciona ao retorno
+    # Adicionar ao dicionário
     data["df_modelagem"] = df_modelagem
 
     return data
