@@ -80,13 +80,30 @@ def plot_last_objective_bar(df):
     fig = px.bar(objetivos, x="Objetivo", y="Quantidade", title="Objetivos Declarados por Alunos Desistentes")
     st.plotly_chart(fig, use_container_width=True)
 
-# 7. Matriz mês do ano x período do curso
+# 7. Matriz mês do ano x período do curso (corrigida)
 def plot_matriz_periodo_mes(pagamentos_df, churn_df):
+    # Garantir tipos compatíveis
+    pagamentos_df["user_id"] = pagamentos_df["user_id"].astype(str)
+    churn_df["user_id"] = churn_df["user_id"].astype(str)
     pagamentos_df["mes"] = pagamentos_df["mes"].astype(str)
     churn_df["mes_calendario_churn"] = churn_df["mes_calendario_churn"].astype(str)
 
-    df = pagamentos_df.merge(churn_df[["user_id", "mes_calendario_churn"]], on="user_id", how="inner")
-    matriz = pd.pivot_table(df, values="user_id", index="mes_calendario_churn", columns="mes", aggfunc="count", fill_value=0)
+    # Merge filtrando apenas alunos desistentes
+    df = pagamentos_df.merge(
+        churn_df[["user_id", "mes_calendario_churn"]],
+        on="user_id",
+        how="inner"
+    )
+
+    # Criar matriz
+    matriz = pd.pivot_table(
+        df,
+        values="user_id",
+        index="mes_calendario_churn",
+        columns="mes",
+        aggfunc="count",
+        fill_value=0
+    )
 
     fig = px.imshow(
         matriz,
