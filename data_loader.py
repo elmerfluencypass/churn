@@ -1,7 +1,7 @@
 import pandas as pd
 
 def load_all_data():
-    # Google Drive URLs (deve estar sempre atualizado com seus links)
+    # Google Drive CSV links
     urls = {
         "customer_profile_table": "https://drive.google.com/uc?id=1MLYWW5Axp_gGFXGF_mPZsK4vqTTBKDlT",
         "churn_detectado": "https://drive.google.com/uc?id=1kkdfrCjTjyzjqYfX7C9vDSdfod5HBYQS",
@@ -10,62 +10,50 @@ def load_all_data():
         "iugu_invoices": "https://drive.google.com/uc?id=1eNcobHn8QJKduVRcs79LsbzT_2L7hK88",
     }
 
-    data = {
-        name: pd.read_csv(url) for name, url in urls.items()
-    }
+    # Leitura dos dados
+    data = {name: pd.read_csv(url) for name, url in urls.items()}
 
-    # Padronizar colunas para snake_case
+    # Padronização de colunas
     for df in data.values():
         df.columns = [col.strip().lower().replace(" ", "_") for col in df.columns]
 
-    # Construção do DataFrame unificado para modelagem
+    # Dados base
     df_cadastro = data["customer_profile_table"].copy()
     df_pagamentos = data["historico_pagamentos"].copy()
 
-    # Preparar datas
-    df_cadastro["data_nascimento"] = pd.to_datetime(df_cadastro["data_nascimento"], errors="coerce")
+    # Conversão de datas e correção do erro .dt com timezone
+    df_cadastro["data_nascimento"] = pd.to_datetime(df_cadastro["data_nascimento"], errors="coerce").dt.tz_localize(None)
     df_cadastro["ultima_data_pagamento"] = pd.to_datetime(df_cadastro["ultima_data_pagamento"], errors="coerce")
 
-    # Calcular idade
-    hoje = pd.to_datetime("today")
+    # Cálculo da idade
+    hoje = pd.to_datetime("today").normalize()
     df_cadastro["idade"] = hoje.year - df_cadastro["data_nascimento"].dt.year
 
-    # Calcular churn (aluno ainda não concluiu e está com +30 dias sem pagar)
+    # Cálculo de churn
     df_cadastro["status_atual"] = df_cadastro["status_atual"].str.lower()
     df_cadastro["dias_sem_pagar"] = (hoje - df_cadastro["ultima_data_pagamento"]).dt.days
     df_cadastro["churn"] = ((df_cadastro["status_atual"] != "concluído") & (df_cadastro["dias_sem_pagar"] > 30)).astype(int)
 
-    # Unir cadastros e pagamentos
-    df_unificado = df_pagamentos.merge(
-        df_cadastro,
-        on="user_id",
-        how="left"
-    )
+    # União dos dados
+    df_unificado = df_pagamentos.merge(df_cadastro, on="user_id", how="left")
 
-    # Renomear campos para o padrão do PDF
+    # Renomear conforme modelo
     df_unificado.rename(columns={
-        "mes": "mes_curso",
-        "sexo": "sexo",
-        "cidade": "cidade",
-        "estado": "estado",
-        "plano_duracao_meses": "plano_duracao_meses",
-        "engagement_score": "engagement_score",
-        "pct_atraso_total": "pct_atraso_total",
-        "qtd_meses_em_atraso": "qtd_meses_em_atraso",
-        "valor_restante_contrato": "valor_restante_contrato",
-        "canal_aquisicao": "canal_aquisicao"
+        "mes": "mes_curso"
     }, inplace=True)
 
-    # Selecionar colunas desejadas
+    # Seleção final de colunas conforme modelo PDF
     colunas_finais = [
         "user_id", "mes_curso", "churn", "idade", "sexo", "cidade", "estado",
         "plano_duracao_meses", "engagement_score", "pct_atraso_total",
         "qtd_meses_em_atraso", "valor_restante_contrato", "canal_aquisicao"
     ]
 
-    df_modelagem = df_unificado[colunas_finais].copy()
+    # Garante que apenas colunas existentes sejam usadas
+    colunas_existentes = [col for col in colunas_finais if col in df_unificado.columns]
+    df_modelagem = df_unificado[colunas_existentes].copy()
 
-    # Retornar os dados brutos + o dataframe final
+    # Adiciona ao dicionário
     data["df_modelagem"] = df_modelagem
 
     return data
