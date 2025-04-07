@@ -62,16 +62,19 @@ def preparar_dados(dfs):
 
     # Conversão segura da data de nascimento
     cadastro['data_nascimento'] = pd.to_datetime(cadastro['data_nascimento'], errors='coerce')
-    cadastro = cadastro[cadastro['data_nascimento'].notna()].copy()
+    cadastro_valid = cadastro[cadastro['data_nascimento'].notna()].copy()
 
-    cadastro['idade'] = ((pd.Timestamp.now() - cadastro['data_nascimento']).dt.days // 365).astype('Int64')
+    cadastro_valid['idade'] = (
+        (pd.Timestamp.now(tz=None) - cadastro_valid['data_nascimento']).dt.days // 365
+    ).astype('Int64')
 
-    cadastro['faixa_etaria'] = pd.cut(cadastro['idade'],
+    cadastro_valid['faixa_etaria'] = pd.cut(
+        cadastro_valid['idade'],
         bins=[0, 17, 24, 34, 44, 54, 64, 200],
         labels=["<18", "18-24", "25-34", "35-44", "45-54", "55-64", "65+"]
     )
     
-    return pagamentos, cadastro
+    return pagamentos, cadastro_valid
 
 # ----------------------
 # 📗 Histograma Vizro: Desistentes por mês
