@@ -4,16 +4,23 @@ import dataviz
 import pov
 import churn_score
 
-st.set_page_config(page_title="Análise de Churn", layout="wide")
+st.set_page_config(
+    page_title="Fluency Churn Dashboard",
+    layout="wide",
+    page_icon="📊"
+)
 
+# Login
 if login():
     st.sidebar.image("logo.png", use_column_width=True)
     st.sidebar.title("Menu")
-    option = st.sidebar.radio("Ir para", ["DataViz", "POV", "Churn Score"])
+    menu_opcao = st.sidebar.radio("Ir para", ["DataViz", "POV", "Churn Score"])
 
-    if option == "DataViz":
+    if menu_opcao == "DataViz":
         dataviz.render()
-    elif option == "POV":
+
+    elif menu_opcao == "POV":
         pov.render()
-    elif option == "Churn Score":
+
+    elif menu_opcao == "Churn Score":
         churn_score.render()
