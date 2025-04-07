@@ -121,3 +121,48 @@ def plot_matriz_periodo_mes(pagamentos_df, cadastro_df):
         aspect="auto"
     )
     st.plotly_chart(fig, use_container_width=True)
+    from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import PCA
+from sklearn.cluster import KMeans
+import plotly.express as px
+
+def show_churn_profile(data):
+    st.title("🔍 Perfil de Churn")
+
+    df = data["df_modelagem"]
+    df = df[df["churn"] == 1].copy()
+
+    # Selecionar features numéricas relevantes
+    features = ["idade", "engagement_score", "pct_atraso_total", "valor_restante_contrato"]
+    df = df.dropna(subset=features)
+
+    # Amostragem estratificada por estado, se disponível
+    if "estado" in df.columns:
+        df = df.groupby("estado", group_keys=False).apply(lambda x: x.sample(min(len(x), 50), random_state=42))
+    else:
+        df = df.sample(n=min(len(df), 200), random_state=42)
+
+    # Escalonar e reduzir dimensionalidade
+    X = df[features]
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(X)
+
+    pca = PCA(n_components=2)
+    X_pca = pca.fit_transform(X_scaled)
+
+    # Clusterização
+    kmeans = KMeans(n_clusters=3, random_state=42)
+    clusters = kmeans.fit_predict(X_scaled)
+
+    df["PCA1"] = X_pca[:, 0]
+    df["PCA2"] = X_pca[:, 1]
+    df["Cluster"] = clusters.astype(str)
+
+    # Gráfico interativo
+    fig = px.scatter(
+        df, x="PCA1", y="PCA2", color="Cluster",
+        hover_data=["user_id", "idade", "estado"] if "estado" in df.columns else ["user_id", "idade"],
+        title="Clusterização de Alunos Desistentes"
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
