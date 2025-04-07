@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+from dateutil.relativedelta import relativedelta
 from loader import load_csv
 
 def render():
@@ -14,16 +15,19 @@ def render():
     df_clientes['data_nascimento'] = pd.to_datetime(df_clientes['data_nascimento'], errors='coerce')
     df_clientes['ultima_data_pagamento'] = pd.to_datetime(df_clientes['ultima_data_pagamento'], errors='coerce')
 
-    # Conversão da coluna de vencimento da última fatura
     df_churn['last_invoice_due_date'] = pd.to_datetime(df_churn['last_invoice_due_date'], errors='coerce')
+    df_churn['data_inicio_curso'] = pd.to_datetime(df_churn['data_inicio_curso'], errors='coerce')
     hoje = pd.Timestamp.now()
 
-    # Calcular meses do plano restantes
-    df_churn['data_inicio_curso'] = pd.to_datetime(df_churn['data_inicio_curso'], errors='coerce')
-    df_churn['meses_ativos'] = ((hoje - df_churn['data_inicio_curso']) / np.timedelta64(1, 'M')).astype(int)
+    def calcular_meses_ativos(inicio):
+        if pd.isnull(inicio):
+            return np.nan
+        delta = relativedelta(hoje, inicio)
+        return delta.years * 12 + delta.months
+
+    df_churn['meses_ativos'] = df_churn['data_inicio_curso'].apply(calcular_meses_ativos)
     df_churn['plano_ativo'] = df_churn['meses_ativos'] < df_churn['plano_duracao_meses']
 
-    # Aplicar regra de churn inferido
     df_churn['churn_inferido'] = (
         (hoje - df_churn['last_invoice_due_date']).dt.days > 30
     ) & (
@@ -32,11 +36,9 @@ def render():
         df_churn['receita_perdida'] > 0
     )
 
-    # Filtrar alunos churnados
     df_churn_filtrado = df_churn[df_churn['churn_inferido']].copy()
     df_churn_filtrado['mes_churn'] = pd.to_numeric(df_churn_filtrado['mes_churn'], errors='coerce')
 
-    # ==== GRÁFICO 1: Desistências por mês ====
     st.subheader("📅 Desistências por mês (inferido)")
     desistencias_mes = df_churn_filtrado['mes_churn'].value_counts().sort_index()
     fig1, ax1 = plt.subplots()
@@ -46,7 +48,6 @@ def render():
     ax1.set_title("Total de Alunos Desistentes por Mês")
     st.pyplot(fig1)
 
-    # ==== GRÁFICO 2: Distribuição de idade ====
     st.subheader("👤 Distribuição de idade dos alunos desistentes")
     df_merge = pd.merge(df_churn_filtrado[['user_id']], df_clientes, on='user_id', how='left')
     df_merge['idade'] = hoje.year - df_merge['data_nascimento'].dt.year
@@ -57,7 +58,6 @@ def render():
     ax2.set_title("Distribuição de Idade dos Alunos Desistentes")
     st.pyplot(fig2)
 
-    # ==== MATRIZ 1: Quantidade por mês vs. período do plano ====
     st.subheader("📈 Matriz: Quantidade de desistentes por Mês vs. Período do Plano")
     matriz_qtd = pd.pivot_table(
         df_churn_filtrado,
@@ -69,7 +69,6 @@ def render():
     )
     st.dataframe(matriz_qtd.style.format(precision=0), use_container_width=True)
 
-    # ==== MATRIZ 2: Receita perdida por mês vs. período ====
     st.subheader("💰 Matriz: Receita perdida por Mês vs. Período do Plano")
     matriz_valor = pd.pivot_table(
         df_churn_filtrado,
