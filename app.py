@@ -9,7 +9,7 @@ st.set_page_config(page_title="Fluencypass Churn", layout="wide")
 
 # ---- Login Section ----
 def login():
-    logo = Image.open("logo.webp")  # ← agora busca o logo na raiz
+    logo = Image.open("logo.webp")
     st.image(logo, width=150)
     st.title("Login Fluencypass")
     
@@ -26,7 +26,7 @@ def login():
 @st.cache_data
 def load_data():
     urls = {
-        "cadastro_clientes": "https://drive.google.com/uc?id=1MLYWW5Axp_gGFXGF_mPZsK4vqTTBKDlT",
+        "customer_profile_table": "https://drive.google.com/uc?id=1MLYWW5Axp_gGFXGF_mPZsK4vqTTBKDlT",
         "churn_detectado": "https://drive.google.com/uc?id=1kkdfrCjTjyzjqYfX7C9vDSdfod5HBYQS",
         "historico_pagamentos": "https://drive.google.com/uc?id=1j2RW-ryt4H3iX8nkaw371yBI0_EGA8MY",
         "tbl_insider": "https://drive.google.com/uc?id=1tPqnQWmowQKNAx2M_4rLW5axH9DZ5TyW",
@@ -41,17 +41,20 @@ def load_data():
 
 # ---- Main Dataviz Screen ----
 def dataviz():
-    logo = Image.open("logo.webp")  # ← também na tela principal
+    logo = Image.open("logo.webp")
     st.image(logo, width=150)
     st.title("📊 Análise de Churn - Fluencypass")
 
     data = load_data()
-    cadastro = data["cadastro_clientes"]
+    cadastro = data["customer_profile_table"]
     historico = data["historico_pagamentos"]
 
-    # Pré-processamento
+    # Conversão e cálculo da idade
+    cadastro['student_birthday'] = pd.to_datetime(cadastro['student_birthday'], errors='coerce')
+    cadastro['idade'] = ((pd.Timestamp.now() - cadastro['student_birthday']).dt.days // 365).astype('Int64')
+
+    # Conversão de datas e cálculo de desistentes
     cadastro['ultima data pagamento'] = pd.to_datetime(cadastro['ultima data pagamento'], errors='coerce')
-    cadastro['idade'] = cadastro['data nascimento'].apply(lambda x: datetime.now().year - pd.to_datetime(x, errors='coerce').year)
     hoje = datetime.today()
     cadastro['desistente'] = cadastro['ultima data pagamento'] < (hoje - timedelta(days=30))
     desistentes = cadastro[cadastro['desistente'] == True]
