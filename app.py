@@ -7,7 +7,6 @@ import plotly.express as px
 
 st.set_page_config(page_title="Fluencypass Churn", layout="wide")
 
-# ---- Login Section ----
 def login():
     logo = Image.open("logo.webp")
     st.image(logo, width=150)
@@ -22,7 +21,6 @@ def login():
         else:
             st.error("Usuário ou senha inválidos")
 
-# ---- Load Data from Google Drive ----
 @st.cache_data
 def load_data():
     urls = {
@@ -39,7 +37,6 @@ def load_data():
         dataframes[name] = pd.read_csv(output)
     return dataframes
 
-# ---- Main Dataviz Screen ----
 def dataviz():
     logo = Image.open("logo.webp")
     st.image(logo, width=150)
@@ -47,16 +44,20 @@ def dataviz():
 
     data = load_data()
     cadastro = data["customer_profile_table"]
+    historico = data["historico_pagamentos"]
 
-    # 🔍 Debug: Mostrar colunas para confirmar nomes
     st.subheader("Debug: Colunas disponíveis na tabela de clientes")
     st.write(cadastro.columns.tolist())
 
-    historico = data["historico_pagamentos"]
-
     # ✅ Conversão segura da data e cálculo da idade
-    cadastro['data_nascimento'] = pd.to_datetime(cadastro['data_nascimento'], errors='coerce')
-    cadastro['idade'] = ((pd.Timestamp.now() - cadastro['data_nascimento']).dt.days // 365).astype('Int64')
+    if 'data_nascimento' in cadastro.columns:
+        cadastro['data_nascimento'] = pd.to_datetime(cadastro['data_nascimento'], errors='coerce')
+        cadastro['idade'] = (
+            (pd.Timestamp.now() - cadastro['data_nascimento']).dt.days // 365
+        ).astype('Int64')
+    else:
+        cadastro['idade'] = None
+        st.warning("Coluna 'data_nascimento' não encontrada.")
 
     cadastro['ultima_data_pagamento'] = pd.to_datetime(cadastro['ultima_data_pagamento'], errors='coerce')
     hoje = datetime.today()
@@ -64,12 +65,10 @@ def dataviz():
     desistentes = cadastro[cadastro['desistente'] == True].copy()
     desistentes['mes_desistencia'] = desistentes['ultima_data_pagamento'].dt.strftime('%B')
 
-    # -- 1. Distribuição da Idade
     st.subheader("Distribuição da Idade dos Alunos")
     fig_idade = px.histogram(cadastro, x='idade', nbins=20, title="Distribuição da Idade dos Alunos")
     st.plotly_chart(fig_idade, use_container_width=True)
 
-    # -- 2. Quantidade de Desistentes por Mês (Verde)
     st.subheader("Quantidade de Desistentes por Mês")
     fig_desist = px.histogram(
         desistentes,
@@ -79,7 +78,6 @@ def dataviz():
     )
     st.plotly_chart(fig_desist, use_container_width=True)
 
-    # -- 3. Mensalidades Não Pagas por Mês (Azul)
     st.subheader("Mensalidades Não Pagas por Mês")
     historico['data prevista pagamento'] = pd.to_datetime(historico['data prevista pagamento'], errors='coerce')
     historico['mes_pagamento'] = historico['data prevista pagamento'].dt.strftime('%B')
@@ -95,8 +93,7 @@ def dataviz():
     )
     st.plotly_chart(fig_inadimplencia, use_container_width=True)
 
-    # -- 4. Matriz Mês x Duração Plano
-    st.subheader("Matriz de Desistência por Mês e Duração do Plano")
+    st.subheader("Matriz de Desistência por Mês e Tipo de Plano")
     desistentes['mes'] = desistentes['ultima_data_pagamento'].dt.month
     matriz = pd.pivot_table(
         data=desistentes,
@@ -113,9 +110,8 @@ def dataviz():
     )
     st.plotly_chart(fig_matriz, use_container_width=True)
 
-    # -- 5. Bolhas: Sexo por Mês
-    st.subheader("Distribuição de Desistência por Sexo")
     if 'sexo' in cadastro.columns:
+        st.subheader("Distribuição de Desistência por Sexo")
         sexo_mes = desistentes.groupby(['mes_desistencia', 'sexo'])['user_id'].count().reset_index()
         fig_sexo = px.scatter(
             sexo_mes,
@@ -128,7 +124,6 @@ def dataviz():
         )
         st.plotly_chart(fig_sexo, use_container_width=True)
 
-    # -- 6. Bolhas: Cidade
     if 'cidade' in cadastro.columns:
         st.subheader("Desistentes por Cidade")
         cidade_mes = desistentes.groupby(['mes_desistencia', 'cidade'])['user_id'].count().reset_index()
