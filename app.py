@@ -56,12 +56,15 @@ def preparar_dados(dfs):
     pagamentos = dfs['historico_pagamentos'].copy()
     cadastro = dfs['cadastro_clientes'].copy()
 
+    # Datas de pagamento
     pagamentos['data_real_pagamento'] = pd.to_datetime(pagamentos['data_real_pagamento'], errors='coerce')
     pagamentos['mes_pagamento'] = pagamentos['data_real_pagamento'].dt.month
     pagamentos['ano_pagamento'] = pagamentos['data_real_pagamento'].dt.year
 
+    # Tratamento de data de nascimento
     cadastro['data_nascimento'] = pd.to_datetime(cadastro['data_nascimento'], errors='coerce')
-    cadastro['idade'] = ((pd.Timestamp.now() - cadastro['data_nascimento']).dt.days // 365).fillna(0).astype(int)
+    cadastro = cadastro[cadastro['data_nascimento'].notna()]  # Remove inválidos
+    cadastro['idade'] = ((pd.Timestamp.now() - cadastro['data_nascimento']).dt.days // 365).astype(int)
     cadastro['faixa_etaria'] = pd.cut(cadastro['idade'],
         bins=[0, 17, 24, 34, 44, 54, 64, 200],
         labels=["<18", "18-24", "25-34", "35-44", "45-54", "55-64", "65+"]
@@ -85,7 +88,7 @@ def grafico_desistentes_por_mes(df):
 # ----------------------
 
 def grafico_perda_financeira(df):
-    df['perda'] = df['valor_mensalidade'] * (12 - df['mes'])  # assumindo plano anual
+    df['perda'] = df['valor_mensalidade'] * (12 - df['mes'])  # plano de 12 meses
     df_filtrado = df[df['dias_em_atraso'] > 30]
     perdas = df_filtrado.groupby('mes')['perda'].sum().reset_index()
     fig = vpx.bar(perdas, x='mes', y='perda', title="Desistentes por Período do Plano", color_discrete_sequence=['blue'])
@@ -126,7 +129,7 @@ def estatistica_kappa(cadastro_df):
     st.dataframe(df_result)
 
 # ----------------------
-# 🚀 Executar
+# 🚀 Execução Principal
 # ----------------------
 
 dfs = carregar_dados()
