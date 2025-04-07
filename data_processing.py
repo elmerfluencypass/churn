@@ -4,17 +4,21 @@ from datetime import datetime
 def identificar_desistentes(clientes_df, pagamentos_df):
     hoje = pd.to_datetime("today").normalize()
 
-    clientes_df["data_inicio_curso"] = pd.to_datetime(clientes_df["data_inicio_curso"])
-    clientes_df["ultima_data_pagamento"] = pd.to_datetime(clientes_df["ultima_data_pagamento"])
+    # Conversão segura de datas com tratamento de erros
+    clientes_df["data_inicio_curso"] = pd.to_datetime(clientes_df["data_inicio_curso"], errors="coerce")
+    clientes_df["ultima_data_pagamento"] = pd.to_datetime(clientes_df["ultima_data_pagamento"], errors="coerce")
 
+    # Normaliza status e calcula dias sem pagar
     clientes_df["status_atual"] = clientes_df["status_atual"].str.lower()
     clientes_df["dias_sem_pagar"] = (hoje - clientes_df["ultima_data_pagamento"]).dt.days
 
+    # Define quem são os desistentes
     desistentes = clientes_df[
         (clientes_df["status_atual"] != "concluído") &
         (clientes_df["dias_sem_pagar"] > 30)
     ].copy()
 
+    # Define quem são os ativos
     ativos = clientes_df[
         (clientes_df["status_atual"] == "ativo") &
         (clientes_df["dias_sem_pagar"] <= 30)
