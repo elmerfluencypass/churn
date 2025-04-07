@@ -1,8 +1,5 @@
 streamlit
 pandas
 gdown
-vizro
 plotly
 Pillow
-git+https://github.com/IBM/vizro.git
-
