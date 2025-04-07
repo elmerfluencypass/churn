@@ -15,8 +15,8 @@ def render():
     df_churn['data_cancelamento'] = pd.to_datetime(df_churn['data_cancelamento'], errors='coerce')
     df_churn['mes_cancelamento'] = df_churn['data_cancelamento'].dt.month
 
-    df_pagamentos['data real pagamento'] = pd.to_datetime(df_pagamentos['data real pagamento'], errors='coerce')
-    df_pagamentos['mes_pagamento'] = df_pagamentos['data real pagamento'].dt.month
+    df_pagamentos['data_real_pagamento'] = pd.to_datetime(df_pagamentos['data_real_pagamento'], errors='coerce')
+    df_pagamentos['mes_pagamento'] = df_pagamentos['data_real_pagamento'].dt.month
 
     # Agrupar desistências por mês
     desistencias_por_mes = df_churn['mes_cancelamento'].value_counts().sort_index()
@@ -26,7 +26,7 @@ def render():
     percentual = st.selectbox("Percentual de alunos a reter", list(range(5, 105, 5)))
     st.markdown("---")
 
-    # === Simulação de alunos evitados ===
+    # Simulação de alunos evitados
     alunos_ev = (desistencias_por_mes * (percentual / 100)).astype(int)
     st.subheader("📉 Alunos retidos por mês")
     fig1, ax1 = plt.subplots()
@@ -36,12 +36,11 @@ def render():
     ax1.set_title("Simulação: Alunos Retidos por Mês")
     st.pyplot(fig1)
 
-    # === Cálculo de valor financeiro salvo ===
-    df_valor = pd.merge(df_churn[['user id', 'mes_cancelamento']], df_pagamentos, on='user id')
-    df_valor = df_valor[df_valor['status pagamento'] != 'Pago']  # apenas valores não pagos
-    df_valor_mensal = df_valor.groupby('mes_cancelamento')['valor mensalidade'].sum().sort_index()
+    # Cálculo de valor financeiro salvo
+    df_valor = pd.merge(df_churn[['user_id', 'mes_cancelamento']], df_pagamentos, on='user_id')
+    df_valor = df_valor[df_valor['status_pagamento'] != 'Pago']
+    df_valor_mensal = df_valor.groupby('mes_cancelamento')['valor_mensalidade'].sum().sort_index()
 
-    # simulação do valor salvo
     valor_salvo_mes = (df_valor_mensal * (percentual / 100)).round(2)
 
     st.subheader("💰 Receita preservada por mês")
@@ -52,6 +51,6 @@ def render():
     ax2.set_title("Simulação: Valor Financeiro Retido por Mês")
     st.pyplot(fig2)
 
-    # === Total anual salvo ===
+    # Total anual salvo
     total = valor_salvo_mes.sum()
     st.subheader(f"📊 Receita total preservada no ano: R$ {total:,.2f}")
