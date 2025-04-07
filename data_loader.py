@@ -9,6 +9,12 @@ def load_all_data():
         "iugu_invoices": "https://drive.google.com/uc?id=1eNcobHn8QJKduVRcs79LsbzT_2L7hK88",
     }
 
-    return {
+    data = {
         name: pd.read_csv(url) for name, url in urls.items()
     }
+
+    # Padronizar colunas para snake_case
+    for df in data.values():
+        df.columns = [col.strip().lower().replace(" ", "_") for col in df.columns]
+
+    return data
