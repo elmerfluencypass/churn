@@ -1,5 +1,5 @@
 streamlit
 pandas
-gdown
-plotly
-Pillow
+numpy
+matplotlib
+scikit-learn
