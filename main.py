@@ -6,14 +6,13 @@ from plots import show_churn_dashboard
 st.set_page_config(page_title="Churn Analysis", layout="wide")
 
 def main():
-    # Controle de login
-    if not login():
-        return
+    # Verifica login antes de exibir qualquer conteúdo
+    authenticated = login()
+    if not authenticated:
+        return  # Interrompe aqui se não logado
 
-    # Logo da Fluencypass no topo
+    # Conteúdo do app após login bem-sucedido
     st.image("logo.webp", width=150)
-
-    # Menu lateral
     menu = st.sidebar.selectbox("Menu", ["Dataviz"])
 
     if menu == "Dataviz":
