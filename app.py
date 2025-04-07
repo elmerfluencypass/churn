@@ -12,7 +12,7 @@ st.set_page_config(layout="wide")
 st.title("📉 Painel de Análise de Desistências")
 
 # ----------------------
-# 🔽 Baixar dados
+# 🔽 Baixar dados do Google Drive
 # ----------------------
 
 CSV_URLS = {
@@ -36,7 +36,7 @@ def baixar_dados():
     return paths
 
 # ----------------------
-# 📦 Carregar e processar
+# 📦 Carregar arquivos
 # ----------------------
 
 def carregar_dados():
@@ -56,19 +56,16 @@ def preparar_dados(dfs):
     pagamentos = dfs['historico_pagamentos'].copy()
     cadastro = dfs['cadastro_clientes'].copy()
 
-    # Datas de pagamento
+    # Processamento de datas
     pagamentos['data_real_pagamento'] = pd.to_datetime(pagamentos['data_real_pagamento'], errors='coerce')
     pagamentos['mes_pagamento'] = pagamentos['data_real_pagamento'].dt.month
     pagamentos['ano_pagamento'] = pagamentos['data_real_pagamento'].dt.year
 
-    # Datas de nascimento tratadas corretamente
+    # Datas de nascimento
     cadastro['data_nascimento'] = pd.to_datetime(cadastro['data_nascimento'], errors='coerce')
     cadastro = cadastro[cadastro['data_nascimento'].notna()].copy()
 
-    cadastro['idade'] = (
-        pd.Timestamp.now().normalize() - cadastro['data_nascimento']
-    ).dt.days // 365
-    cadastro['idade'] = cadastro['idade'].astype("Int64")
+    cadastro['idade'] = ((pd.Timestamp.now() - cadastro['data_nascimento']).dt.days // 365).astype("Int64")
 
     cadastro['faixa_etaria'] = pd.cut(cadastro['idade'],
         bins=[0, 17, 24, 34, 44, 54, 64, 200],
@@ -78,7 +75,7 @@ def preparar_dados(dfs):
     return pagamentos, cadastro
 
 # ----------------------
-# 📗 Vizro: Desistentes por Mês
+# 📗 Histograma Vizro: Desistentes por mês
 # ----------------------
 
 def grafico_desistentes_por_mes(df):
@@ -89,24 +86,26 @@ def grafico_desistentes_por_mes(df):
     st.plotly_chart(fig, use_container_width=True)
 
 # ----------------------
-# 📘 Vizro: Perda Financeira por Período
+# 📘 Histograma Vizro: Perda financeira por período
 # ----------------------
 
 def grafico_perda_financeira(df):
-    df['perda'] = df['valor_mensalidade'] * (12 - df['mes'])  # plano de 12 meses
+    df['perda'] = df['valor_mensalidade'] * (12 - df['mes'])
     df_filtrado = df[df['dias_em_atraso'] > 30]
     perdas = df_filtrado.groupby('mes')['perda'].sum().reset_index()
     fig = vpx.bar(perdas, x='mes', y='perda', title="Desistentes por Período do Plano", color_discrete_sequence=['blue'])
     st.plotly_chart(fig, use_container_width=True)
 
 # ----------------------
-# 🧊 Matriz mês x mês de desistência
+# 🧊 Matriz mês x mês
 # ----------------------
 
 def matriz_mes_a_mes(df):
     df['mes_real'] = pd.to_datetime(df['data_real_pagamento'], errors='coerce').dt.month
     df['mes_curso'] = df['mes']
-    matriz = df[df['dias_em_atraso'] > 30].pivot_table(index='mes_real', columns='mes_curso', values='user_id', aggfunc='count', fill_value=0)
+    matriz = df[df['dias_em_atraso'] > 30].pivot_table(
+        index='mes_real', columns='mes_curso', values='user_id', aggfunc='count', fill_value=0
+    )
     st.write("### Matriz Mês-a-Mês de Desistência")
     fig, ax = plt.subplots(figsize=(12, 6))
     sns.heatmap(matriz, annot=True, fmt='d', cmap='YlGnBu', linewidths=0.5, ax=ax)
@@ -119,7 +118,6 @@ def matriz_mes_a_mes(df):
 def estatistica_kappa(cadastro_df):
     st.subheader("📊 Estatística Kappa por Variáveis Categóricas")
     resultado = []
-
     variaveis = ['faixa_etaria', 'estado', 'tipo_plano', 'canal_aquisicao']
     cadastro_df = cadastro_df.dropna(subset=['status_atual'])
 
@@ -127,14 +125,17 @@ def estatistica_kappa(cadastro_df):
         if cadastro_df[var].nunique() > 1 and cadastro_df[var].notna().sum() > 0:
             le1 = LabelEncoder().fit(cadastro_df[var].astype(str))
             le2 = LabelEncoder().fit(cadastro_df['status_atual'].astype(str))
-            kappa = cohen_kappa_score(le1.transform(cadastro_df[var].astype(str)), le2.transform(cadastro_df['status_atual'].astype(str)))
+            kappa = cohen_kappa_score(
+                le1.transform(cadastro_df[var].astype(str)),
+                le2.transform(cadastro_df['status_atual'].astype(str))
+            )
             resultado.append((var, round(kappa, 3)))
 
     df_result = pd.DataFrame(resultado, columns=['Variável', 'Kappa'])
     st.dataframe(df_result)
 
 # ----------------------
-# 🚀 Execução Principal
+# 🚀 Execução principal
 # ----------------------
 
 dfs = carregar_dados()
