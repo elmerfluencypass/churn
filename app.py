@@ -1,149 +1,127 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
 import gdown
-from sklearn.metrics import cohen_kappa_score
-from sklearn.preprocessing import LabelEncoder
-import vizro.plotly.express as vpx
+from datetime import datetime, timedelta
+from PIL import Image
+import vizro.plotting as vz
 
-st.set_page_config(layout="wide")
-st.title("📉 Painel de Análise de Desistências")
+st.set_page_config(page_title="Fluencypass Churn", layout="wide")
 
-# ----------------------
-# 🔽 Baixar dados do Google Drive
-# ----------------------
-
-CSV_URLS = {
-    "cadastro_clientes": "1MLYWW5Axp_gGFXGF_mPZsK4vqTTBKDlT",
-    "churn_detectado": "1kkdfrCjTjyzjqYfX7C9vDSdfod5HBYQS",
-    "historico_pagamentos": "1j2RW-ryt4H3iX8nkaw371yBI0_EGA8MY",
-    "tbl_insider": "1tPqnQWmowQKNAx2M_4rLW5axH9DZ5TyW",
-    "iugu_invoices": "1eNcobHn8QJKduVRcs79LsbzT_2L7hK88"
-}
-
-def baixar_dados():
-    import os
-    os.makedirs("data", exist_ok=True)
-    paths = []
-    for nome, file_id in CSV_URLS.items():
-        path = f"data/{nome}.csv"
-        url = f"https://drive.google.com/uc?id={file_id}"
-        if not os.path.exists(path):
-            gdown.download(url, path, quiet=False)
-        paths.append(path)
-    return paths
-
-# ----------------------
-# 📦 Carregar arquivos
-# ----------------------
-
-def carregar_dados():
-    arquivos = baixar_dados()
-    dfs = {}
-    for path in arquivos:
-        nome = path.split("/")[-1].replace(".csv", "")
-        df = pd.read_csv(path)
-        dfs[nome] = df
-    return dfs
-
-# ----------------------
-# 🔄 Pré-processamento
-# ----------------------
-
-def preparar_dados(dfs):
-    pagamentos = dfs['historico_pagamentos'].copy()
-    cadastro = dfs['cadastro_clientes'].copy()
-
-    pagamentos['data_real_pagamento'] = pd.to_datetime(pagamentos['data_real_pagamento'], errors='coerce')
-    pagamentos['mes_pagamento'] = pagamentos['data_real_pagamento'].dt.month
-    pagamentos['ano_pagamento'] = pagamentos['data_real_pagamento'].dt.year
-
-    # Conversão segura da data de nascimento
-    cadastro['data_nascimento'] = pd.to_datetime(cadastro['data_nascimento'], errors='coerce')
-    cadastro_valid = cadastro[cadastro['data_nascimento'].notna()].copy()
-
-    cadastro_valid['idade'] = (
-        (pd.Timestamp.now(tz=None) - cadastro_valid['data_nascimento']).dt.days // 365
-    ).astype('Int64')
-
-    cadastro_valid['faixa_etaria'] = pd.cut(
-        cadastro_valid['idade'],
-        bins=[0, 17, 24, 34, 44, 54, 64, 200],
-        labels=["<18", "18-24", "25-34", "35-44", "45-54", "55-64", "65+"]
-    )
+# ---- Login Section ----
+def login():
+    logo = Image.open("assets/logo.webp")
+    st.image(logo, width=150)
+    st.title("Login Fluencypass")
     
-    return pagamentos, cadastro_valid
+    username = st.text_input("Usuário")
+    password = st.text_input("Senha", type="password")
+    
+    if st.button("Entrar"):
+        if username == "fluencypass123" and password == "fluencypass123":
+            st.session_state.logged_in = True
+        else:
+            st.error("Usuário ou senha inválidos")
 
-# ----------------------
-# 📗 Histograma Vizro: Desistentes por mês
-# ----------------------
+# ---- Load Data from Google Drive ----
+@st.cache_data
+def load_data():
+    urls = {
+        "cadastro_clientes": "https://drive.google.com/uc?id=1MLYWW5Axp_gGFXGF_mPZsK4vqTTBKDlT",
+        "churn_detectado": "https://drive.google.com/uc?id=1kkdfrCjTjyzjqYfX7C9vDSdfod5HBYQS",
+        "historico_pagamentos": "https://drive.google.com/uc?id=1j2RW-ryt4H3iX8nkaw371yBI0_EGA8MY",
+        "tbl_insider": "https://drive.google.com/uc?id=1tPqnQWmowQKNAx2M_4rLW5axH9DZ5TyW",
+        "iugu_invoices": "https://drive.google.com/uc?id=1eNcobHn8QJKduVRcs79LsbzT_2L7hK88"
+    }
+    dataframes = {}
+    for name, url in urls.items():
+        output = f"/tmp/{name}.csv"
+        gdown.download(url, output, quiet=False)
+        dataframes[name] = pd.read_csv(output)
+    return dataframes
 
-def grafico_desistentes_por_mes(df):
-    df['atraso'] = df['dias_em_atraso'] > 30
-    desistentes = df[df['atraso'] & df['mes_pagamento'].notna()]
-    resumo = desistentes.groupby('mes_pagamento').size().reset_index(name='total')
-    fig = vpx.bar(resumo, x='mes_pagamento', y='total', title="Total de Desistentes por Mês", color_discrete_sequence=['green'])
-    st.plotly_chart(fig, use_container_width=True)
+# ---- Main Dataviz Screen ----
+def dataviz():
+    logo = Image.open("assets/logo.webp")
+    st.image(logo, width=150)
+    st.title("📊 Análise de Churn - Fluencypass")
 
-# ----------------------
-# 📘 Histograma Vizro: Perda financeira por período
-# ----------------------
+    data = load_data()
+    cadastro = data["cadastro_clientes"]
+    historico = data["historico_pagamentos"]
 
-def grafico_perda_financeira(df):
-    df['perda'] = df['valor_mensalidade'] * (12 - df['mes'])
-    df_filtrado = df[df['dias_em_atraso'] > 30]
-    perdas = df_filtrado.groupby('mes')['perda'].sum().reset_index()
-    fig = vpx.bar(perdas, x='mes', y='perda', title="Desistentes por Período do Plano", color_discrete_sequence=['blue'])
-    st.plotly_chart(fig, use_container_width=True)
+    # Pré-processamento
+    cadastro['ultima data pagamento'] = pd.to_datetime(cadastro['ultima data pagamento'], errors='coerce')
+    cadastro['idade'] = cadastro['data nascimento'].apply(lambda x: datetime.now().year - pd.to_datetime(x, errors='coerce').year)
+    hoje = datetime.today()
+    cadastro['desistente'] = cadastro['ultima data pagamento'] < (hoje - timedelta(days=30))
+    desistentes = cadastro[cadastro['desistente'] == True]
+    desistentes['mes_desistencia'] = desistentes['ultima data pagamento'].dt.strftime('%B')
 
-# ----------------------
-# 🧊 Matriz mês x mês
-# ----------------------
+    # -- 1. Distribuição da Idade
+    st.subheader("Distribuição da Idade dos Alunos")
+    vz.histogram(data=cadastro, x='idade', title="Distribuição da Idade dos Alunos").show()
 
-def matriz_mes_a_mes(df):
-    df['mes_real'] = pd.to_datetime(df['data_real_pagamento'], errors='coerce').dt.month
-    df['mes_curso'] = df['mes']
-    matriz = df[df['dias_em_atraso'] > 30].pivot_table(
-        index='mes_real', columns='mes_curso', values='user_id', aggfunc='count', fill_value=0
+    # -- 2. Quantidade de Desistentes por Mês (Verde)
+    st.subheader("Quantidade de Desistentes por Mês")
+    vz.histogram(
+        data=desistentes,
+        x='mes_desistencia',
+        title="Quantidade de Desistentes por Mês",
+        color_discrete_sequence=["#e0f2f1", "#66bb6a"]
+    ).show()
+
+    # -- 3. Mensalidades Não Pagas por Mês (Azul)
+    st.subheader("Mensalidades Não Pagas por Mês")
+    historico['data prevista pagamento'] = pd.to_datetime(historico['data prevista pagamento'], errors='coerce')
+    historico['mes_pagamento'] = historico['data prevista pagamento'].dt.strftime('%B')
+    inadimplentes = historico[historico['status pagamento'] == "Em aberto"]
+    inadimplentes_grouped = inadimplentes.groupby('mes_pagamento')['valor mensalidade'].sum().reset_index()
+
+    vz.histogram(
+        data=inadimplentes_grouped,
+        x='mes_pagamento', y='valor mensalidade',
+        title="Mensalidades Não Pagas por Mês (R$)",
+        color_discrete_sequence=["#e3f2fd", "#2196f3"]
+    ).show()
+
+    # -- 4. Matriz Mês x Duração Plano
+    st.subheader("Matriz de Desistência por Mês e Duração do Plano")
+    desistentes['mes'] = desistentes['ultima data pagamento'].dt.month
+    matriz = pd.pivot_table(
+        data=desistentes,
+        index='mes',
+        columns='plano duracao meses',
+        values='user id',
+        aggfunc='count',
+        fill_value=0
     )
-    st.write("### Matriz Mês-a-Mês de Desistência")
-    fig, ax = plt.subplots(figsize=(12, 6))
-    sns.heatmap(matriz, annot=True, fmt='d', cmap='YlGnBu', linewidths=0.5, ax=ax)
-    st.pyplot(fig)
+    vz.heatmap(data=matriz, title="Matriz de Desistência por Mês e Duração do Plano").show()
 
-# ----------------------
-# 🧠 Estatística Kappa
-# ----------------------
+    # -- 5. Bolhas: Sexo por Mês
+    st.subheader("Distribuição de Desistência por Sexo")
+    sexo_mes = desistentes.groupby(['mes_desistencia', 'sexo'])['user id'].count().reset_index()
+    vz.scatter(
+        data=sexo_mes,
+        x='mes_desistencia', y='sexo', size='user id',
+        title="Desistência por Sexo"
+    ).show()
 
-def estatistica_kappa(cadastro_df):
-    st.subheader("📊 Estatística Kappa por Variáveis Categóricas")
-    resultado = []
-    variaveis = ['faixa_etaria', 'estado', 'tipo_plano', 'canal_aquisicao']
-    cadastro_df = cadastro_df.dropna(subset=['status_atual'])
+    # -- 6. Bolhas: Cidade
+    st.subheader("Desistentes por Cidade")
+    cidade_mes = desistentes.groupby(['mes_desistencia', 'cidade'])['user id'].count().reset_index()
+    vz.scatter(
+        data=cidade_mes,
+        x='mes_desistencia', y='cidade', size='user id',
+        title="Desistência por Cidade"
+    ).show()
 
-    for var in variaveis:
-        if cadastro_df[var].nunique() > 1 and cadastro_df[var].notna().sum() > 0:
-            le1 = LabelEncoder().fit(cadastro_df[var].astype(str))
-            le2 = LabelEncoder().fit(cadastro_df['status_atual'].astype(str))
-            kappa = cohen_kappa_score(
-                le1.transform(cadastro_df[var].astype(str)),
-                le2.transform(cadastro_df['status_atual'].astype(str))
-            )
-            resultado.append((var, round(kappa, 3)))
+# ---- App Body ----
+if 'logged_in' not in st.session_state:
+    st.session_state.logged_in = False
 
-    df_result = pd.DataFrame(resultado, columns=['Variável', 'Kappa'])
-    st.dataframe(df_result)
-
-# ----------------------
-# 🚀 Execução principal
-# ----------------------
-
-dfs = carregar_dados()
-pagamentos_df, cadastro_df = preparar_dados(dfs)
-
-grafico_desistentes_por_mes(pagamentos_df)
-grafico_perda_financeira(pagamentos_df)
-matriz_mes_a_mes(pagamentos_df)
-estatistica_kappa(cadastro_df)
+if not st.session_state.logged_in:
+    login()
+else:
+    menu = st.sidebar.selectbox("Menu", ["Dataviz"])
+    if menu == "Dataviz":
+        dataviz()
