@@ -13,16 +13,18 @@ def load_all_data():
     # Leitura dos dados
     data = {name: pd.read_csv(url) for name, url in urls.items()}
 
-    # Padronização de colunas
+    # Padronizar nomes de colunas
     for df in data.values():
         df.columns = [col.strip().lower().replace(" ", "_") for col in df.columns]
 
-    # Dados base
+    # Bases principais
     df_cadastro = data["customer_profile_table"].copy()
     df_pagamentos = data["historico_pagamentos"].copy()
 
-    # Conversão de datas e correção do erro .dt com timezone
-    df_cadastro["data_nascimento"] = pd.to_datetime(df_cadastro["data_nascimento"], errors="coerce").dt.tz_localize(None)
+    # Conversão robusta da data de nascimento
+    dn = pd.to_datetime(df_cadastro["data_nascimento"], errors="coerce")
+    df_cadastro["data_nascimento"] = dn.apply(lambda x: x.tz_localize(None) if pd.notnull(x) and x.tzinfo else x)
+
     df_cadastro["ultima_data_pagamento"] = pd.to_datetime(df_cadastro["ultima_data_pagamento"], errors="coerce")
 
     # Cálculo da idade
@@ -34,26 +36,24 @@ def load_all_data():
     df_cadastro["dias_sem_pagar"] = (hoje - df_cadastro["ultima_data_pagamento"]).dt.days
     df_cadastro["churn"] = ((df_cadastro["status_atual"] != "concluído") & (df_cadastro["dias_sem_pagar"] > 30)).astype(int)
 
-    # União dos dados
+    # União entre pagamentos e cadastro
     df_unificado = df_pagamentos.merge(df_cadastro, on="user_id", how="left")
 
-    # Renomear conforme modelo
-    df_unificado.rename(columns={
-        "mes": "mes_curso"
-    }, inplace=True)
+    # Renomear mes → mes_curso
+    df_unificado.rename(columns={"mes": "mes_curso"}, inplace=True)
 
-    # Seleção final de colunas conforme modelo PDF
+    # Colunas esperadas no modelo
     colunas_finais = [
         "user_id", "mes_curso", "churn", "idade", "sexo", "cidade", "estado",
         "plano_duracao_meses", "engagement_score", "pct_atraso_total",
         "qtd_meses_em_atraso", "valor_restante_contrato", "canal_aquisicao"
     ]
 
-    # Garante que apenas colunas existentes sejam usadas
+    # Selecionar apenas colunas existentes
     colunas_existentes = [col for col in colunas_finais if col in df_unificado.columns]
     df_modelagem = df_unificado[colunas_existentes].copy()
 
-    # Adiciona ao dicionário
+    # Adiciona ao retorno
     data["df_modelagem"] = df_modelagem
 
     return data
