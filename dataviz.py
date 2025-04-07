@@ -13,8 +13,8 @@ def render():
     df_pagamentos = load_csv("historico_pagamentos")
 
     # Conversões necessárias
-    df_clientes['data nascimento'] = pd.to_datetime(df_clientes['data nascimento'], errors='coerce')
-    df_clientes['ultima data pagamento'] = pd.to_datetime(df_clientes['ultima data pagamento'], errors='coerce')
+    df_clientes['data_nascimento'] = pd.to_datetime(df_clientes['data_nascimento'], errors='coerce')
+    df_clientes['ultima_data_pagamento'] = pd.to_datetime(df_clientes['ultima_data_pagamento'], errors='coerce')
     
     # ==== GRÁFICO 1: Histograma de desistentes por mês ====
     df_churn['data_cancelamento'] = pd.to_datetime(df_churn['data_cancelamento'], errors='coerce')
@@ -33,8 +33,8 @@ def render():
     # ==== GRÁFICO 2: Distribuição de idade dos desistentes ====
     st.subheader("👤 Distribuição de idade dos alunos desistentes")
     current_year = pd.Timestamp.now().year
-    df_merged = pd.merge(df_churn, df_clientes, on="user id", how="left")
-    df_merged['idade'] = current_year - df_merged['data nascimento'].dt.year
+    df_merged = pd.merge(df_churn, df_clientes, on="user_id", how="left")
+    df_merged['idade'] = current_year - df_merged['data_nascimento'].dt.year
 
     fig2, ax2 = plt.subplots()
     ax2.hist(df_merged['idade'].dropna(), bins=10)
@@ -50,7 +50,7 @@ def render():
         df_merged,
         index='mes_cancelamento',
         columns='mes',
-        values='user id',
+        values='user_id',
         aggfunc='count',
         fill_value=0
     )
@@ -58,16 +58,16 @@ def render():
 
     # ==== MATRIZ 2: Valor financeiro por célula ====
     st.subheader("💰 Matriz: Valor financeiro total perdido (por mês e período do plano)")
-    df_pagamentos['data real pagamento'] = pd.to_datetime(df_pagamentos['data real pagamento'], errors='coerce')
-    df_pagamentos['mes_cancelamento'] = df_pagamentos['data real pagamento'].dt.month
-    df_valor = pd.merge(df_churn[['user id']], df_pagamentos, on='user id')
-    df_valor = df_valor[df_valor['status pagamento'] != 'Pago']  # assumir valores não pagos como desistência
+    df_pagamentos['data_real_pagamento'] = pd.to_datetime(df_pagamentos['data_real_pagamento'], errors='coerce')
+    df_pagamentos['mes_cancelamento'] = df_pagamentos['data_real_pagamento'].dt.month
+    df_valor = pd.merge(df_churn[['user_id']], df_pagamentos, on='user_id')
+    df_valor = df_valor[df_valor['status_pagamento'] != 'Pago']  # assumir valores não pagos como desistência
 
     matriz_valor = pd.pivot_table(
         df_valor,
         index='mes_cancelamento',
         columns='mes',
-        values='valor mensalidade',
+        values='valor_mensalidade',
         aggfunc='sum',
         fill_value=0
     )
