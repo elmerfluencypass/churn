@@ -49,11 +49,10 @@ def dataviz():
     cadastro = data["customer_profile_table"]
     historico = data["historico_pagamentos"]
 
-    # Cálculo da idade
-    cadastro['student_birthday'] = pd.to_datetime(cadastro['student_birthday'], errors='coerce')
-    cadastro['idade'] = ((pd.Timestamp.now() - cadastro['student_birthday']).dt.days // 365).astype('Int64')
+    # ✅ Corrigido: Nome correto da coluna de nascimento
+    cadastro['student_birthdate'] = pd.to_datetime(cadastro['student_birthdate'], errors='coerce')
+    cadastro['idade'] = ((pd.Timestamp.now() - cadastro['student_birthdate']).dt.days // 365).astype('Int64')
 
-    # Identificação de desistentes
     cadastro['ultima data pagamento'] = pd.to_datetime(cadastro['ultima data pagamento'], errors='coerce')
     hoje = datetime.today()
     cadastro['desistente'] = cadastro['ultima data pagamento'] < (hoje - timedelta(days=30))
