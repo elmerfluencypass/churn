@@ -7,18 +7,24 @@ from loader import load_csv
 def render():
     st.title("📊 Análise de Churn - DataViz")
 
-    # Carregar dados
     df_churn = load_csv("churn_detectado")
     df_clientes = load_csv("customer_profile_table")
     df_pagamentos = load_csv("historico_pagamentos")
 
-    # Conversões necessárias
     df_clientes['data_nascimento'] = pd.to_datetime(df_clientes['data_nascimento'], errors='coerce')
     df_clientes['ultima_data_pagamento'] = pd.to_datetime(df_clientes['ultima_data_pagamento'], errors='coerce')
-    
-    # ==== GRÁFICO 1: Histograma de desistentes por mês ====
-    df_churn['data_cancelamento'] = pd.to_datetime(df_churn['data_cancelamento'], errors='coerce')
-    df_churn['mes_cancelamento'] = df_churn['data_cancelamento'].dt.month
+
+    st.write("📌 Colunas do df_churn:", df_churn.columns.tolist())
+
+    # Fallback para identificar coluna de cancelamento
+    coluna_cancelamento = [col for col in df_churn.columns if 'cancelamento' in col]
+    if coluna_cancelamento:
+        cancelamento_col = coluna_cancelamento[0]
+        df_churn[cancelamento_col] = pd.to_datetime(df_churn[cancelamento_col], errors='coerce')
+        df_churn['mes_cancelamento'] = df_churn[cancelamento_col].dt.month
+    else:
+        st.error("❌ Coluna relacionada a cancelamento não encontrada.")
+        st.stop()
 
     st.subheader("📅 Desistências por mês")
     desistencias_mes = df_churn['mes_cancelamento'].value_counts().sort_index()
@@ -30,7 +36,6 @@ def render():
     ax1.set_title("Total de Alunos Desistentes por Mês")
     st.pyplot(fig1)
 
-    # ==== GRÁFICO 2: Distribuição de idade dos desistentes ====
     st.subheader("👤 Distribuição de idade dos alunos desistentes")
     current_year = pd.Timestamp.now().year
     df_merged = pd.merge(df_churn, df_clientes, on="user_id", how="left")
@@ -43,9 +48,8 @@ def render():
     ax2.set_title("Distribuição de Idade dos Alunos Desistentes")
     st.pyplot(fig2)
 
-    # ==== MATRIZ 1: Quantidade de desistentes (mês vs período plano) ====
     st.subheader("📈 Matriz: Desistências por Mês vs. Período do Plano")
-    df_merged['mes_cancelamento'] = df_merged['data_cancelamento'].dt.month
+    df_merged['mes_cancelamento'] = df_merged[cancelamento_col].dt.month
     matriz_qtd = pd.pivot_table(
         df_merged,
         index='mes_cancelamento',
@@ -56,12 +60,11 @@ def render():
     )
     st.dataframe(matriz_qtd.style.format(precision=0), use_container_width=True)
 
-    # ==== MATRIZ 2: Valor financeiro por célula ====
     st.subheader("💰 Matriz: Valor financeiro total perdido (por mês e período do plano)")
     df_pagamentos['data_real_pagamento'] = pd.to_datetime(df_pagamentos['data_real_pagamento'], errors='coerce')
     df_pagamentos['mes_cancelamento'] = df_pagamentos['data_real_pagamento'].dt.month
     df_valor = pd.merge(df_churn[['user_id']], df_pagamentos, on='user_id')
-    df_valor = df_valor[df_valor['status_pagamento'] != 'Pago']  # assumir valores não pagos como desistência
+    df_valor = df_valor[df_valor['status_pagamento'] != 'Pago']
 
     matriz_valor = pd.pivot_table(
         df_valor,
