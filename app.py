@@ -61,10 +61,15 @@ def preparar_dados(dfs):
     pagamentos['mes_pagamento'] = pagamentos['data_real_pagamento'].dt.month
     pagamentos['ano_pagamento'] = pagamentos['data_real_pagamento'].dt.year
 
-    # Tratamento de data de nascimento
+    # Datas de nascimento tratadas corretamente
     cadastro['data_nascimento'] = pd.to_datetime(cadastro['data_nascimento'], errors='coerce')
-    cadastro = cadastro[cadastro['data_nascimento'].notna()]  # Remove inválidos
-    cadastro['idade'] = ((pd.Timestamp.now() - cadastro['data_nascimento']).dt.days // 365).astype(int)
+    cadastro = cadastro[cadastro['data_nascimento'].notna()].copy()
+
+    cadastro['idade'] = (
+        pd.Timestamp.now().normalize() - cadastro['data_nascimento']
+    ).dt.days // 365
+    cadastro['idade'] = cadastro['idade'].astype("Int64")
+
     cadastro['faixa_etaria'] = pd.cut(cadastro['idade'],
         bins=[0, 17, 24, 34, 44, 54, 64, 200],
         labels=["<18", "18-24", "25-34", "35-44", "45-54", "55-64", "65+"]
