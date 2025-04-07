@@ -6,17 +6,17 @@ from plots import show_churn_dashboard
 st.set_page_config(page_title="Churn Analysis", layout="wide")
 
 def main():
-    # Verifica login antes de exibir qualquer conteúdo
-    authenticated = login()
-    if not authenticated:
-        return  # Interrompe aqui se não logado
+    if not login():
+        return
 
-    # Conteúdo do app após login bem-sucedido
     st.image("logo.webp", width=150)
     menu = st.sidebar.selectbox("Menu", ["Dataviz"])
 
     if menu == "Dataviz":
-        data = load_all_data()
+        with st.spinner("Carregando dados..."):
+            progress = st.progress(0)
+            data = load_all_data()
+            progress.progress(100)
         show_churn_dashboard(data)
 
 if __name__ == "__main__":
