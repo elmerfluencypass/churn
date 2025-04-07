@@ -9,7 +9,9 @@ CSV_LINKS = {
     "iugu_invoices": "https://drive.google.com/uc?id=1eNcobHn8QJKduVRcs79LsbzT_2L7hK88"
 }
 
-@st.cache  # Compatível com versões mais antigas e atuais
+@st.cache_data
 def load_csv(name):
     url = CSV_LINKS[name]
-    return pd.read_csv(url)
+    df = pd.read_csv(url)
+    df.columns = df.columns.str.strip().str.lower().str.replace(" ", "_")
+    return df
