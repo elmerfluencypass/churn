@@ -48,13 +48,13 @@ def dataviz():
     data = load_data()
     cadastro = data["customer_profile_table"]
 
-    # 🔍 Mostrar colunas disponíveis (debug temporário)
+    # 🔍 Debug: Mostrar colunas para confirmar nomes
     st.subheader("Debug: Colunas disponíveis na tabela de clientes")
     st.write(cadastro.columns.tolist())
 
     historico = data["historico_pagamentos"]
 
-    # ✅ Cálculo da idade usando o nome correto da coluna
+    # ✅ Conversão segura da data e cálculo da idade
     cadastro['data_nascimento'] = pd.to_datetime(cadastro['data_nascimento'], errors='coerce')
     cadastro['idade'] = ((pd.Timestamp.now() - cadastro['data_nascimento']).dt.days // 365).astype('Int64')
 
@@ -101,45 +101,47 @@ def dataviz():
     matriz = pd.pivot_table(
         data=desistentes,
         index='mes',
-        columns='plano duracao meses',
+        columns='tipo_plano',
         values='user_id',
         aggfunc='count',
         fill_value=0
     )
     fig_matriz = px.imshow(
         matriz,
-        labels=dict(x="Duração do Plano (meses)", y="Mês", color="Desistentes"),
+        labels=dict(x="Tipo do Plano", y="Mês", color="Desistentes"),
         color_continuous_scale=px.colors.sequential.Reds
     )
     st.plotly_chart(fig_matriz, use_container_width=True)
 
     # -- 5. Bolhas: Sexo por Mês
     st.subheader("Distribuição de Desistência por Sexo")
-    sexo_mes = desistentes.groupby(['mes_desistencia', 'sexo'])['user_id'].count().reset_index()
-    fig_sexo = px.scatter(
-        sexo_mes,
-        x='mes_desistencia',
-        y='sexo',
-        size='user_id',
-        color='sexo',
-        title="Desistência por Sexo",
-        size_max=40
-    )
-    st.plotly_chart(fig_sexo, use_container_width=True)
+    if 'sexo' in cadastro.columns:
+        sexo_mes = desistentes.groupby(['mes_desistencia', 'sexo'])['user_id'].count().reset_index()
+        fig_sexo = px.scatter(
+            sexo_mes,
+            x='mes_desistencia',
+            y='sexo',
+            size='user_id',
+            color='sexo',
+            title="Desistência por Sexo",
+            size_max=40
+        )
+        st.plotly_chart(fig_sexo, use_container_width=True)
 
     # -- 6. Bolhas: Cidade
-    st.subheader("Desistentes por Cidade")
-    cidade_mes = desistentes.groupby(['mes_desistencia', 'cidade'])['user_id'].count().reset_index()
-    fig_cidade = px.scatter(
-        cidade_mes,
-        x='mes_desistencia',
-        y='cidade',
-        size='user_id',
-        color='cidade',
-        title="Desistência por Cidade",
-        size_max=40
-    )
-    st.plotly_chart(fig_cidade, use_container_width=True)
+    if 'cidade' in cadastro.columns:
+        st.subheader("Desistentes por Cidade")
+        cidade_mes = desistentes.groupby(['mes_desistencia', 'cidade'])['user_id'].count().reset_index()
+        fig_cidade = px.scatter(
+            cidade_mes,
+            x='mes_desistencia',
+            y='cidade',
+            size='user_id',
+            color='cidade',
+            title="Desistência por Cidade",
+            size_max=40
+        )
+        st.plotly_chart(fig_cidade, use_container_width=True)
 
 # ---- App Body ----
 if 'logged_in' not in st.session_state:
