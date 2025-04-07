@@ -18,7 +18,7 @@ CSV_URLS = {
     "churn_detectado": "1kkdfrCjTjyzjqYfX7C9vDSdfod5HBYQS",
     "historico_pagamentos": "1j2RW-ryt4H3iX8nkaw371yBI0_EGA8MY",
     "tbl_insider": "1tPqnQWmowQKNAx2M_4rLW5axH9DZ5TyW",
-    "temp_life_cycle": "1eNcobHn8QJKduVRcs79LsbzT_2L7hK88"
+    "iugu_invoices": "1eNcobHn8QJKduVRcs79LsbzT_2L7hK88"
 }
 
 def baixar_dados():
@@ -39,26 +39,35 @@ def carregar_dados():
     for f in arquivos:
         df = pd.read_csv(f, parse_dates=True, dayfirst=True)
         
-        # Detecta e padroniza coluna de data
-        data_cols = [col for col in df.columns if 'data' in col.lower()]
-        if data_cols:
-            df['data_evento'] = pd.to_datetime(df[data_cols[0]], errors='coerce')
-        else:
-            df['data_evento'] = pd.NaT
+        # Se a tabela for iugu_invoices, vamos usar due_date como referência temporal
+        if "iugu_invoices" in f and "due_date" in df.columns:
+            df["due_date"] = pd.to_datetime(df["due_date"], errors='coerce')
 
         dfs.append(df)
 
-    return pd.concat(dfs, ignore_index=True)
+    df_geral = pd.concat(dfs, ignore_index=True)
+    return df_geral
 
 # ======================================
-# 📅 Filtro de Data
+# 📅 Filtro por Data (com base em due_date)
 # ======================================
 
 def filtro_data(df):
-    min_date = df['data_evento'].min()
-    max_date = df['data_evento'].max()
-    data_ini, data_fim = st.date_input("Filtrar por data:", [min_date, max_date])
-    return df[(df['data_evento'] >= pd.to_datetime(data_ini)) & (df['data_evento'] <= pd.to_datetime(data_fim))]
+    if 'due_date' not in df.columns:
+        st.error("Coluna 'due_date' não encontrada nos dados.")
+        return df
+
+    df_valid = df[df['due_date'].notna()]
+
+    if df_valid.empty:
+        st.warning("Não há datas válidas na coluna 'due_date' para aplicar o filtro.")
+        return df
+
+    min_date = df_valid['due_date'].min()
+    max_date = df_valid['due_date'].max()
+    data_ini, data_fim = st.date_input("Filtrar por data de vencimento:", [min_date, max_date])
+
+    return df[(df['due_date'] >= pd.to_datetime(data_ini)) & (df['due_date'] <= pd.to_datetime(data_fim))]
 
 # ======================================
 # 📊 Gráficos
@@ -89,13 +98,18 @@ def correlacoes(df):
 # ======================================
 
 def gerar_matriz_temporal(df):
-    df['ano'] = df['data_evento'].dt.year
-    df['mes'] = df['data_evento'].dt.month
+    if 'due_date' not in df.columns:
+        st.warning("Coluna 'due_date' não encontrada.")
+        return
+
+    df['ano'] = pd.to_datetime(df['due_date'], errors='coerce').dt.year
+    df['mes'] = pd.to_datetime(df['due_date'], errors='coerce').dt.month
+
     if 'status' in df.columns:
         matriz = df[df['status'] == 'desistente'].pivot_table(
             index='ano', columns='mes', values='id_aluno', aggfunc='count', fill_value=0
         )
-        st.write("### Matriz de Desistências por Mês")
+        st.write("### Matriz de Desistências por Mês (com base em due_date)")
         fig, ax = plt.subplots(figsize=(12, 6))
         sns.heatmap(matriz, cmap="YlOrRd", annot=True, fmt="d", linewidths=0.5, ax=ax)
         st.pyplot(fig)
@@ -114,7 +128,7 @@ def identificar_padroes(df):
     df_model = df.copy()
     df_model['desistencia'] = df_model['status'] == 'desistente'
 
-    drop_cols = ['status', 'data_evento', 'id_aluno', 'desistencia']
+    drop_cols = ['status', 'due_date', 'id_aluno', 'desistencia']
     X = df_model.drop(columns=[col for col in drop_cols if col in df_model.columns], errors='ignore')
     y = df_model['desistencia']
 
