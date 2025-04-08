@@ -180,40 +180,53 @@ from sklearn.cluster import KMeans
 
 # Outras funções existentes como show_churn_dashboard(), etc., ficam aqui
 
+from sklearn.preprocessing import StandardScaler, LabelEncoder
+from sklearn.decomposition import PCA
+from sklearn.cluster import KMeans
+import plotly.express as px
+import streamlit as st
+
 def show_churn_profile(data):
     st.title("🔍 Perfil de Churn")
 
     df = data["df_modelagem"]
     df = df[df["churn"] == 1].copy()
 
-    # Candidatas à clusterização
-    candidatas = ["idade", "engagement_score", "pct_atraso_total", "valor_restante_contrato"]
+    # Garantir colunas necessárias
+    colunas_relevantes = ["idade", "estado", "cidade", "mes_curso", "plano_duracao_meses"]
+    colunas_presentes = [col for col in colunas_relevantes if col in df.columns]
 
-    # Corrigir idade negativa ou inválida
+    if len(colunas_presentes) < 2:
+        st.warning("⚠️ Dados insuficientes para análise de churn.")
+        return
+
+    # Corrigir idade inválida
     if "idade" in df.columns:
         df = df[df["idade"].notnull() & (df["idade"] > 0) & (df["idade"] < 120)]
 
-    # Validar colunas com dados numéricos
-    colunas_validas = []
-    for col in candidatas:
-        if col in df.columns and df[col].dropna().apply(lambda x: isinstance(x, (int, float))).sum() > 0:
-            colunas_validas.append(col)
+    # Remover nulos nas colunas selecionadas
+    df = df.dropna(subset=colunas_presentes)
 
-    st.write(f"✅ Variáveis disponíveis para clusterização: {colunas_validas}")
-
-    if len(colunas_validas) < 2:
-        st.warning("⚠️ Não há colunas com dados suficientes para realizar a clusterização.")
+    if df.empty:
+        st.warning("⚠️ Não há dados suficientes após remoção de nulos e filtragem.")
         return
 
-    df = df.dropna(subset=colunas_validas)
+    # Codificar variáveis categóricas
+    label_cols = ["estado", "cidade"]
+    for col in label_cols:
+        if col in df.columns:
+            le = LabelEncoder()
+            df[col] = le.fit_transform(df[col].astype(str))
 
-    # Amostragem estratificada ou aleatória
+    # Amostragem (limite por performance)
     if "estado" in df.columns and df["estado"].nunique() > 1:
         df = df.groupby("estado", group_keys=False).apply(lambda x: x.sample(min(len(x), 50), random_state=42))
     elif len(df) > 200:
         df = df.sample(n=200, random_state=42)
 
-    X = df[colunas_validas]
+    # Normalizar e clusterizar
+    features = [col for col in colunas_relevantes if col in df.columns]
+    X = df[features]
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X)
 
@@ -227,15 +240,20 @@ def show_churn_profile(data):
     df["PCA2"] = X_pca[:, 1]
     df["Cluster"] = clusters.astype(str)
 
+    # Hover fields
+    hover_cols = ["user_id", "idade", "estado", "cidade", "mes_curso", "plano_duracao_meses"]
+    hover_data = [c for c in hover_cols if c in df.columns]
+
     fig = px.scatter(
         df,
         x="PCA1",
         y="PCA2",
         color="Cluster",
-        hover_data=["user_id"] + [c for c in ["idade", "estado"] if c in df.columns],
+        hover_data=hover_data,
         title="Clusterização de Alunos Desistentes"
     )
     st.plotly_chart(fig, use_container_width=True)
+
 
 import numpy as np
 import streamlit as st
