@@ -26,6 +26,70 @@ def show_churn_dashboard(data):
 
     st.subheader("📍 Distribuição de Alunos Desistentes por UF")
     plot_uf_pizza(merged)
+    import numpy as np
+import pandas as pd
+import streamlit as st
+import plotly.express as px
+
+def calcular_score_de_churn(df_modelagem):
+    st.title("🧠 Score de Propensão à Desistência")
+
+    df = df_modelagem.copy()
+
+    # Separar desistentes e ativos
+    df = df.dropna(subset=["user_id", "mes_curso"])
+    df["mes_curso"] = df["mes_curso"].astype(int)
+
+    desistentes = df[df["churn"] == 1].copy()
+    ativos = df[df["churn"] == 0].copy()
+
+    if ativos.empty or desistentes.empty:
+        st.warning("⚠️ Base insuficiente para calcular scores.")
+        return
+
+    # Criar agrupamento de estado atual do aluno
+    col_estado = "estado" if "estado" in df.columns else "cidade" if "cidade" in df.columns else "plano_duracao_meses"
+
+    estados = desistentes[[col_estado, "mes_curso", "user_id"]].drop_duplicates()
+    transicoes = estados.groupby([col_estado, "mes_curso"]).agg(contagem=("user_id", "count")).reset_index()
+
+    totais_por_estado = estados.groupby([col_estado]).agg(total=("user_id", "count")).reset_index()
+    matriz = transicoes.merge(totais_por_estado, on=col_estado)
+    matriz["prob_churn"] = matriz["contagem"] / matriz["total"]
+
+    # Aplicar a transição aos alunos ativos
+    base_score = ativos.copy()
+    base_score["probabilidade_churn"] = base_score.apply(
+        lambda row: buscar_prob(matriz, row.get(col_estado), row.get("mes_curso")), axis=1
+    )
+
+    # Exibir a matriz com destaque visual
+    st.subheader("📋 Matriz de Scores (Alunos Ativos)")
+    styled_df = base_score[["user_id", col_estado, "mes_curso", "probabilidade_churn"]].copy()
+    st.dataframe(
+        styled_df.style.background_gradient(
+            subset=["probabilidade_churn"], cmap="Reds"
+        ).format({"probabilidade_churn": "{:.1%}"})
+    )
+
+    # Exportar CSV
+    csv = styled_df.to_csv(index=False).encode("utf-8")
+    st.download_button(
+        label="📥 Baixar Scores CSV",
+        data=csv,
+        file_name="score_de_churn.csv",
+        mime="text/csv"
+    )
+
+def buscar_prob(matriz, estado, mes):
+    try:
+        prob = matriz[
+            (matriz["mes_curso"] == mes) & (matriz["estado"] == estado)
+        ]["prob_churn"].values
+        return prob[0] if len(prob) > 0 else 0.02
+    except:
+        return 0.02
+
 
     st.subheader("🎓 Nível do Curso dos Alunos Desistentes")
     plot_last_level_pizza(merged)
