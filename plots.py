@@ -229,6 +229,56 @@ def show_churn_profile(data):
         title="Clusterização de Alunos Desistentes"
     )
     st.plotly_chart(fig, use_container_width=True)
+import numpy as np
+import streamlit as st
+
+def calcular_variaveis_score(df_modelagem):
+    st.title("📊 Matriz de Variáveis para Churn Score")
+
+    df = df_modelagem.copy()
+    df = df[df["churn"] == 1].copy()
+
+    if df.empty:
+        st.warning("Não há registros de alunos desistentes suficientes para gerar variáveis.")
+        return
+
+    # Criar coluna de tempo até churn com base no número de parcelas pagas
+    df["tempo_ate_churn"] = df.groupby("user_id")["mes_curso"].transform("max").astype(float)
+
+    # Agregações temporais
+    variaveis = df.groupby("user_id").agg({
+        "idade": "first",
+        "estado": "first" if "estado" in df.columns else "count",
+        "plano_duracao_meses": "first",
+        "engagement_score": ["mean", "std", "last"],
+        "pct_atraso_total": "mean",
+        "qtd_meses_em_atraso": "mean",
+        "valor_restante_contrato": "last",
+        "tempo_ate_churn": "first"
+    })
+
+    # Ajustar colunas multiindex
+    variaveis.columns = ['_'.join(col).strip() if isinstance(col, tuple) else col for col in variaveis.columns]
+    variaveis.reset_index(inplace=True)
+
+    # Derivar nova variável: tendência de queda no engajamento
+    variaveis["variacao_engajamento"] = variaveis["engagement_score_last"] - variaveis["engagement_score_mean"]
+
+    # Renomear para clareza
+    variaveis.rename(columns={
+        "idade_first": "idade",
+        "estado_first": "estado",
+        "plano_duracao_meses_first": "plano",
+        "engagement_score_mean": "media_engajamento",
+        "engagement_score_std": "desvio_engajamento",
+        "pct_atraso_total_mean": "media_pct_atraso",
+        "qtd_meses_em_atraso_mean": "media_meses_atraso",
+        "valor_restante_contrato_last": "valor_restante",
+        "tempo_ate_churn_first": "tempo_ate_churn"
+    }, inplace=True)
+
+    st.dataframe(variaveis.head(50), use_container_width=True)
+    st.success("✅ Matriz de variáveis criada com sucesso.")
 
 
 
