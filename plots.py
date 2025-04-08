@@ -172,6 +172,14 @@ from sklearn.decomposition import PCA
 from sklearn.cluster import KMeans
 import plotly.express as px
 
+import streamlit as st
+import plotly.express as px
+from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import PCA
+from sklearn.cluster import KMeans
+
+# Outras funções existentes como show_churn_dashboard(), etc., ficam aqui
+
 def show_churn_profile(data):
     st.title("🔍 Perfil de Churn")
 
@@ -181,7 +189,11 @@ def show_churn_profile(data):
     # Candidatas à clusterização
     candidatas = ["idade", "engagement_score", "pct_atraso_total", "valor_restante_contrato"]
 
-    # Seleciona variáveis com pelo menos algum valor numérico válido
+    # Corrigir idade negativa ou inválida
+    if "idade" in df.columns:
+        df = df[df["idade"].notnull() & (df["idade"] > 0) & (df["idade"] < 120)]
+
+    # Validar colunas com dados numéricos
     colunas_validas = []
     for col in candidatas:
         if col in df.columns and df[col].dropna().apply(lambda x: isinstance(x, (int, float))).sum() > 0:
@@ -193,42 +205,38 @@ def show_churn_profile(data):
         st.warning("⚠️ Não há colunas com dados suficientes para realizar a clusterização.")
         return
 
-    # Manter apenas registros com dados nessas colunas
     df = df.dropna(subset=colunas_validas)
 
-    # Amostragem (pode ser total se pouco dado)
-    amostra = df.copy()
+    # Amostragem estratificada ou aleatória
     if "estado" in df.columns and df["estado"].nunique() > 1:
-        amostra = df.groupby("estado", group_keys=False).apply(lambda x: x.sample(min(len(x), 50), random_state=42))
+        df = df.groupby("estado", group_keys=False).apply(lambda x: x.sample(min(len(x), 50), random_state=42))
     elif len(df) > 200:
-        amostra = df.sample(n=200, random_state=42)
+        df = df.sample(n=200, random_state=42)
 
-    # Pré-processamento
-    X = amostra[colunas_validas]
+    X = df[colunas_validas]
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X)
 
-    # PCA + KMeans
     pca = PCA(n_components=2)
     X_pca = pca.fit_transform(X_scaled)
 
     kmeans = KMeans(n_clusters=3, random_state=42)
     clusters = kmeans.fit_predict(X_scaled)
 
-    amostra["PCA1"] = X_pca[:, 0]
-    amostra["PCA2"] = X_pca[:, 1]
-    amostra["Cluster"] = clusters.astype(str)
+    df["PCA1"] = X_pca[:, 0]
+    df["PCA2"] = X_pca[:, 1]
+    df["Cluster"] = clusters.astype(str)
 
-    # Gráfico
     fig = px.scatter(
-        amostra,
+        df,
         x="PCA1",
         y="PCA2",
         color="Cluster",
-        hover_data=["user_id"] + [c for c in ["idade", "estado"] if c in amostra.columns],
+        hover_data=["user_id"] + [c for c in ["idade", "estado"] if c in df.columns],
         title="Clusterização de Alunos Desistentes"
     )
     st.plotly_chart(fig, use_container_width=True)
+
 import numpy as np
 import streamlit as st
 
