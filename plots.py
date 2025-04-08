@@ -178,46 +178,52 @@ def show_churn_profile(data):
     df = data["df_modelagem"]
     df = df[df["churn"] == 1].copy()
 
-    # Variáveis candidatas para clusterização
-    possiveis = ["idade", "engagement_score", "pct_atraso_total", "valor_restante_contrato"]
-    features = [col for col in possiveis if col in df.columns]
+    # Candidatas à clusterização
+    candidatas = ["idade", "engagement_score", "pct_atraso_total", "valor_restante_contrato"]
+    colunas_validas = []
 
-    st.write(f"✅ Usando as variáveis: {features}")
+    for col in candidatas:
+        if col in df.columns:
+            if df[col].dropna().apply(lambda x: isinstance(x, (int, float, float))).sum() > 0:
+                colunas_validas.append(col)
 
-    if len(features) < 2:
-        st.warning("❗ Não há colunas suficientes para gerar clusters.")
+    st.write(f"✅ Variáveis disponíveis para clusterização: {colunas_validas}")
+
+    if len(colunas_validas) < 2:
+        st.warning("⚠️ Não há colunas com dados suficientes para realizar a clusterização.")
         return
 
-    df = df.dropna(subset=features)
+    df = df.dropna(subset=colunas_validas)
 
-    # Amostragem estratificada (se possível)
+    # Amostragem estratificada
     if "estado" in df.columns:
         df = df.groupby("estado", group_keys=False).apply(lambda x: x.sample(min(len(x), 50), random_state=42))
     else:
         df = df.sample(n=min(len(df), 200), random_state=42)
 
-    # Pré-processamento
-    X = df[features]
+    X = df[colunas_validas]
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X)
 
-    # Redução de dimensionalidade
+    # PCA para visualização
     pca = PCA(n_components=2)
     X_pca = pca.fit_transform(X_scaled)
 
-    # Clusterização
     kmeans = KMeans(n_clusters=3, random_state=42)
     clusters = kmeans.fit_predict(X_scaled)
 
-    # Resultados
     df["PCA1"] = X_pca[:, 0]
     df["PCA2"] = X_pca[:, 1]
     df["Cluster"] = clusters.astype(str)
 
     fig = px.scatter(
-        df, x="PCA1", y="PCA2", color="Cluster",
-        hover_data=["user_id", "idade"] if "idade" in df.columns else ["user_id"],
+        df,
+        x="PCA1",
+        y="PCA2",
+        color="Cluster",
+        hover_data=["user_id"] + [c for c in ["idade", "estado"] if c in df.columns],
         title="Clusterização de Alunos Desistentes"
     )
     st.plotly_chart(fig, use_container_width=True)
+
 
