@@ -1,8 +1,8 @@
-# Atualizando o arquivo data_processing.py
 import pandas as pd
 from datetime import datetime
 
 def identificar_desistentes(clientes_df, pagamentos_df):
+    """Identifica alunos desistentes com base no histórico de pagamentos."""
     hoje = pd.to_datetime("today").normalize()
 
     # Conversão segura de datas
@@ -31,6 +31,7 @@ def identificar_desistentes(clientes_df, pagamentos_df):
     return desistentes, ativos
 
 def enriquecer_com_idade(df):
+    """Calcula a idade dos alunos com base na data de nascimento."""
     df["data_nascimento"] = pd.to_datetime(df["data_nascimento"], errors="coerce")
     hoje = pd.to_datetime("today").normalize()
     df["idade"] = ((hoje - df["data_nascimento"]).dt.days / 365.25).round().astype('Int64')
@@ -38,6 +39,7 @@ def enriquecer_com_idade(df):
     return df
 
 def preparar_dados_modelagem(clientes_df, pagamentos_df):
+    """Prepara os dados para modelagem de churn."""
     # Garantir tipos corretos
     pagamentos_df["user_id"] = pagamentos_df["user_id"].astype(str)
     clientes_df["user_id"] = clientes_df["user_id"].astype(str)
@@ -48,7 +50,7 @@ def preparar_dados_modelagem(clientes_df, pagamentos_df):
     # Engenharia de features
     df["mes_curso"] = df["mes_curso"].astype(int)
     df["churn"] = ((df["status_atual"] != "concluído") & 
-                   ((pd.to_datetime("today") - df["ultima_data_pagamento"]).dt.days > 30).astype(int)
+                   ((pd.to_datetime("today") - df["ultima_data_pagamento"]).dt.days > 30)).astype(int)
     
     # Selecionar colunas relevantes
     colunas_modelagem = [
@@ -60,3 +62,24 @@ def preparar_dados_modelagem(clientes_df, pagamentos_df):
     # Manter apenas colunas disponíveis
     colunas_existentes = [col for col in colunas_modelagem if col in df.columns]
     return df[colunas_existentes].copy()
+
+def calcular_metricas_desistentes(desistentes_df):
+    """Calcula métricas agregadas dos desistentes."""
+    if desistentes_df.empty:
+        return pd.DataFrame()
+    
+    metricas = {
+        'total_desistentes': len(desistentes_df),
+        'idade_media': desistentes_df['idade'].mean(),
+        'mes_curso_medio': desistentes_df['mes_curso'].mean(),
+        'taxa_engajamento': desistentes_df['engagement_score'].mean(),
+        'taxa_atraso': desistentes_df['pct_atraso_total'].mean()
+    }
+    return pd.DataFrame([metricas])
+
+__all__ = [
+    'identificar_desistentes',
+    'enriquecer_com_idade', 
+    'preparar_dados_modelagem',
+    'calcular_metricas_desistentes'
+]
