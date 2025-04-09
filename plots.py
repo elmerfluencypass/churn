@@ -1,13 +1,19 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-from data_processing import identificar_desistentes, enriquecer_com_idade
+import numpy as np
 from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.decomposition import PCA
 from sklearn.cluster import KMeans
-import numpy as np
+from data_processing import (
+    identificar_desistentes,
+    enriquecer_com_idade,
+    preparar_dados_modelagem,
+    calcular_metricas_desistentes
+)
 
 def show_churn_dashboard(data):
+    """Exibe o dashboard completo de análise de churn."""
     clientes = data["customer_profile_table"]
     pagamentos = data["historico_pagamentos"]
     insider = data["tbl_insider"]
@@ -19,6 +25,17 @@ def show_churn_dashboard(data):
     # Merge com insider
     merged = desistentes.merge(insider, how="left", left_on="user_id", right_on="student_id")
     
+    # Mostrar métricas resumidas
+    st.subheader("📊 Métricas Gerais de Desistência")
+    metricas = calcular_metricas_desistentes(desistentes)
+    if not metricas.empty:
+        st.dataframe(metricas.style.format({
+            'idade_media': '{:.1f}',
+            'mes_curso_medio': '{:.1f}',
+            'taxa_engajamento': '{:.2f}',
+            'taxa_atraso': '{:.2%}'
+        }), use_container_width=True)
+    
     # Gráficos existentes
     st.subheader("📉 Churn por Mês")
     plot_churn_mensal(desistentes)
@@ -26,24 +43,22 @@ def show_churn_dashboard(data):
     st.subheader("👥 Distribuição Etária (Desistentes)")
     plot_distribuicao_etaria(desistentes)
     
-    st.subheader("📍 Distribuição de Alunos Desistentes por UF")
+    st.subheader("📍 Distribuição por UF")
     plot_uf_pizza(merged)
     
-    st.subheader("🎓 Nível do Curso dos Alunos Desistentes")
+    st.subheader("🎓 Nível do Curso")
     plot_last_level_pizza(merged)
     
-    st.subheader("💬 Distribuição por Nome do Plano (Bolhas)")
+    st.subheader("💬 Distribuição por Plano (Bolhas)")
     plot_plan_name_bubbles(merged)
     
-    st.subheader("🎯 Objetivos Declarados dos Alunos Desistentes")
+    st.subheader("🎯 Objetivos Declarados")
     plot_last_objective_bar(merged)
     
-    # Nova matriz adicionada
-    st.subheader("📊 Matriz: Desistência por Mês x Período do Curso")
+    st.subheader("📊 Matriz: Mês x Período do Curso")
     plot_matriz_periodo_mes(pagamentos, clientes)
-
-# 1. Gráfico churn por mês
-def plot_churn_mensal(df):
+    def plot_churn_mensal(df):
+    """Gráfico de barras de desistências por mês."""
     df["mes_nome"] = pd.to_datetime(df["ultima_data_pagamento"], errors="coerce").dt.strftime("%b")
     contagem = df["mes_nome"].value_counts().sort_index().reset_index()
     contagem.columns = ["mes_nome", "desistencias"]
@@ -52,16 +67,16 @@ def plot_churn_mensal(df):
                  labels={"mes_nome": "Mês", "desistencias": "Número de Desistências"})
     st.plotly_chart(fig, use_container_width=True)
 
-# 2. Gráfico distribuição etária
 def plot_distribuicao_etaria(df):
+    """Histograma de distribuição de idade."""
     df = df[df["idade"].notnull() & (df["idade"] > 0)]
     fig = px.histogram(df, x="idade", nbins=20, 
                        title="Distribuição de Idade dos Desistentes",
                        labels={"idade": "Idade", "count": "Número de Alunos"})
     st.plotly_chart(fig, use_container_width=True)
 
-# 3. Pizza por UF
 def plot_uf_pizza(df):
+    """Gráfico de pizza por UF."""
     uf_counts = df["student_uf"].value_counts().reset_index()
     uf_counts.columns = ["UF", "Quantidade"]
     fig = px.pie(uf_counts, values="Quantidade", names="UF", 
@@ -69,8 +84,8 @@ def plot_uf_pizza(df):
                  hole=0.3)
     st.plotly_chart(fig, use_container_width=True)
 
-# 4. Pizza por nível do curso
 def plot_last_level_pizza(df):
+    """Gráfico de pizza por nível do curso."""
     levels = df["last_level"].dropna().value_counts().reset_index()
     levels.columns = ["Nível", "Quantidade"]
     fig = px.pie(levels, values="Quantidade", names="Nível", 
@@ -78,8 +93,8 @@ def plot_last_level_pizza(df):
                  hole=0.3)
     st.plotly_chart(fig, use_container_width=True)
 
-# 5. Bolhas por plano
 def plot_plan_name_bubbles(df):
+    """Gráfico de bolhas por plano."""
     plans = df["plan_name"].dropna().value_counts().reset_index()
     plans.columns = ["Plano", "Quantidade"]
     fig = px.scatter(plans, x="Plano", y="Quantidade", size="Quantidade", 
@@ -87,8 +102,8 @@ def plot_plan_name_bubbles(df):
                      labels={"Plano": "Nome do Plano", "Quantidade": "Número de Alunos"})
     st.plotly_chart(fig, use_container_width=True)
 
-# 6. Objetivos finais
 def plot_last_objective_bar(df):
+    """Gráfico de barras por objetivo."""
     objetivos = df["last_objective"].dropna().value_counts().reset_index()
     objetivos.columns = ["Objetivo", "Quantidade"]
     fig = px.bar(objetivos, x="Objetivo", y="Quantidade", 
@@ -96,8 +111,8 @@ def plot_last_objective_bar(df):
                  labels={"Objetivo": "Objetivo do Aluno", "Quantidade": "Número de Alunos"})
     st.plotly_chart(fig, use_container_width=True)
 
-# 7. Matriz mês do ano x período do curso
 def plot_matriz_periodo_mes(pagamentos_df, cadastro_df):
+    """Matriz de desistência por mês vs período do curso."""
     # Preparar dados
     pagamentos_df["user_id"] = pagamentos_df["user_id"].astype(str)
     cadastro_df["user_id"] = cadastro_df["user_id"].astype(str)
@@ -147,16 +162,20 @@ def plot_matriz_periodo_mes(pagamentos_df, cadastro_df):
         labels=dict(x="Período do Curso (meses)", y="Mês do Ano", color="Desistências")
     )
     st.plotly_chart(fig, use_container_width=True)
-
-def show_churn_profile(data):
+    def show_churn_profile(data):
+    """Exibe a análise de perfil dos desistentes."""
     st.title("🔍 Perfil de Churn")
     
     df = data["df_modelagem"]
+    if df.empty:
+        st.warning("Nenhum dado disponível para análise.")
+        return
+    
     df = df[df["churn"] == 1].copy()
     
-    # Verificar dados mínimos
+    # Verificação de dados mínimos
     if len(df) < 10:
-        st.warning("Dados insuficientes para análise de perfil. Necessário pelo menos 10 registros.")
+        st.warning("Dados insuficientes para análise. Mínimo de 10 registros necessários.")
         return
     
     # Selecionar features numéricas relevantes
@@ -201,6 +220,7 @@ def show_churn_profile(data):
     st.plotly_chart(fig, use_container_width=True)
 
 def calcular_score_de_churn(df_modelagem):
+    """Calcula e exibe o score de propensão ao churn."""
     st.title("🧠 Score de Propensão à Desistência")
     
     df = df_modelagem.copy()
@@ -269,6 +289,7 @@ def calcular_score_de_churn(df_modelagem):
     )
 
 def calcular_variaveis_score(df_modelagem):
+    """Calcula variáveis para modelagem de churn."""
     st.title("📊 Matriz de Variáveis para Churn Score")
 
     df = df_modelagem.copy()
@@ -278,7 +299,7 @@ def calcular_variaveis_score(df_modelagem):
         st.warning("Não há registros de alunos desistentes suficientes para gerar variáveis.")
         return
 
-    # Criar coluna de tempo até churn com base no número de parcelas pagas
+    # Criar coluna de tempo até churn
     df["tempo_ate_churn"] = df.groupby("user_id")["mes_curso"].transform("max").astype(float)
 
     # Agregações temporais
@@ -297,7 +318,7 @@ def calcular_variaveis_score(df_modelagem):
     variaveis.columns = ['_'.join(col).strip() if isinstance(col, tuple) else col for col in variaveis.columns]
     variaveis.reset_index(inplace=True)
 
-    # Derivar nova variável: tendência de queda no engajamento
+    # Derivar nova variável
     variaveis["variacao_engajamento"] = variaveis["engagement_score_last"] - variaveis["engagement_score_mean"]
 
     # Renomear para clareza
