@@ -31,53 +31,108 @@ import pandas as pd
 import streamlit as st
 import plotly.express as px
 
+# Atualizando apenas a função calcular_score_de_churn no arquivo plots.py
 def calcular_score_de_churn(df_modelagem):
     st.title("🧠 Score de Propensão à Desistência")
-
+    
+    # Pré-processamento dos dados
     df = df_modelagem.copy()
-
-    # Separar desistentes e ativos
     df = df.dropna(subset=["user_id", "mes_curso"])
     df["mes_curso"] = df["mes_curso"].astype(int)
-
+    
+    # Separar desistentes e ativos
     desistentes = df[df["churn"] == 1].copy()
     ativos = df[df["churn"] == 0].copy()
-
+    
     if ativos.empty or desistentes.empty:
         st.warning("⚠️ Base insuficiente para calcular scores.")
         return
-
-    # Criar agrupamento de estado atual do aluno
-    col_estado = "estado" if "estado" in df.columns else "cidade" if "cidade" in df.columns else "plano_duracao_meses"
-
-    estados = desistentes[[col_estado, "mes_curso", "user_id"]].drop_duplicates()
-    transicoes = estados.groupby([col_estado, "mes_curso"]).agg(contagem=("user_id", "count")).reset_index()
-
-    totais_por_estado = estados.groupby([col_estado]).agg(total=("user_id", "count")).reset_index()
-    matriz = transicoes.merge(totais_por_estado, on=col_estado)
-    matriz["prob_churn"] = matriz["contagem"] / matriz["total"]
-
-    # Aplicar a transição aos alunos ativos
-    base_score = ativos.copy()
-    base_score["probabilidade_churn"] = base_score.apply(
-        lambda row: buscar_prob(matriz, row.get(col_estado), row.get("mes_curso")), axis=1
-    )
-
-    # Exibir a matriz com destaque visual
-    st.subheader("📋 Matriz de Scores (Alunos Ativos)")
-    styled_df = base_score[["user_id", col_estado, "mes_curso", "probabilidade_churn"]].copy()
+    
+    # Identificar padrões dos desistentes
+    # 1. Probabilidade por mês do curso
+    prob_mes_curso = desistentes.groupby("mes_curso")["user_id"].nunique() / df.groupby("mes_curso")["user_id"].nunique()
+    prob_mes_curso = prob_mes_curso.fillna(0).to_dict()
+    
+    # 2. Probabilidade por estado (se disponível)
+    prob_estado = {}
+    if "estado" in df.columns:
+        prob_estado = desistentes.groupby("estado")["user_id"].nunique() / df.groupby("estado")["user_id"].nunique()
+        prob_estado = prob_estado.fillna(0).to_dict()
+    
+    # 3. Fatores de risco adicionais
+    fatores_risco = {}
+    if "engagement_score" in df.columns:
+        media_engajamento = desistentes["engagement_score"].mean()
+        fatores_risco["engajamento_baixo"] = lambda x: 1 if x < media_engajamento else 0
+    
+    if "pct_atraso_total" in df.columns:
+        media_atraso = desistentes["pct_atraso_total"].mean()
+        fatores_risco["historico_atraso"] = lambda x: x / media_atraso if x > 0 else 0
+    
+    # Calcular score para alunos ativos
+    def calcular_score(row):
+        score = 0
+        
+        # Baseado no mês atual do curso
+        score += 0.5 * prob_mes_curso.get(row["mes_curso"], 0)
+        
+        # Baseado no estado (se disponível)
+        if "estado" in row and prob_estado:
+            score += 0.3 * prob_estado.get(row["estado"], 0)
+        
+        # Fatores de risco adicionais
+        if "engagement_score" in row and "engajamento_baixo" in fatores_risco:
+            score += 0.1 * fatores_risco["engajamento_baixo"](row["engagement_score"])
+        
+        if "pct_atraso_total" in row and "historico_atraso" in fatores_risco:
+            score += 0.1 * min(fatores_risco["historico_atraso"](row["pct_atraso_total"]), 1)
+        
+        # Normalizar para ficar entre 0 e 1
+        return min(max(score, 0), 1)
+    
+    # Aplicar a função de score
+    ativos["score_churn"] = ativos.apply(calcular_score, axis=1)
+    
+    # Ordenar por score mais alto
+    ativos = ativos.sort_values("score_churn", ascending=False)
+    
+    # Exibir tabela com os scores
+    st.subheader("📋 Alunos Ativos com Scores de Churn")
+    
+    # Selecionar colunas relevantes para exibição
+    colunas_exibir = ["user_id", "score_churn", "mes_curso"]
+    if "estado" in ativos.columns:
+        colunas_exibir.append("estado")
+    if "engagement_score" in ativos.columns:
+        colunas_exibir.append("engagement_score")
+    if "pct_atraso_total" in ativos.columns:
+        colunas_exibir.append("pct_atraso_total")
+    
+    # Exibir dataframe com formatação condicional
     st.dataframe(
-        styled_df.style.background_gradient(
-            subset=["probabilidade_churn"], cmap="Reds"
-        ).format({"probabilidade_churn": "{:.1%}"})
+        ativos[colunas_exibir].style.background_gradient(
+            subset=["score_churn"], 
+            cmap="Reds",
+            vmin=0,
+            vmax=1
+        ).format({"score_churn": "{:.2%}"}),
+        use_container_width=True
     )
-
-    # Exportar CSV
-    csv = styled_df.to_csv(index=False).encode("utf-8")
+    
+    # Gráfico de distribuição dos scores
+    st.subheader("📊 Distribuição dos Scores de Churn")
+    fig = px.histogram(ativos, x="score_churn", nbins=20, 
+                       title="Frequência dos Scores de Propensão ao Churn")
+    st.plotly_chart(fig, use_container_width=True)
+    
+    # Download dos resultados
+    st.subheader("📥 Exportar Resultados")
+    csv = ativos[["user_id", "score_churn"] + [c for c in colunas_exibir if c not in ["user_id", "score_churn"]]].to_csv(index=False)
+    
     st.download_button(
-        label="📥 Baixar Scores CSV",
+        label="Baixar CSV com Scores",
         data=csv,
-        file_name="score_de_churn.csv",
+        file_name="scores_churn.csv",
         mime="text/csv"
     )
 
